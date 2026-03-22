@@ -32,6 +32,7 @@ describe("Planarian Restore", () => {
     let manager = await AegisMemoryManager.create({
       agentId: "agent-test",
       workspaceDir: testDir,
+      config: {},
     });
     
     // Ingest specific sentence
@@ -42,7 +43,7 @@ describe("Planarian Restore", () => {
     });
 
     // Verify search works on original
-    let docs = executeRetrievalPipeline(manager!.getDb(), "Planarians regrow", DEFAULT_AEGIS_CONFIG);
+    let docs = await executeRetrievalPipeline(manager!.getDb(), "Planarians regrow", DEFAULT_AEGIS_CONFIG);
     expect(docs.length).toBeGreaterThan(0);
 
     // 2. Take a Snapshot using Tardigrade
@@ -70,11 +71,12 @@ describe("Planarian Restore", () => {
     const restoredManager = await AegisMemoryManager.create({
       agentId: "agent-test",
       workspaceDir: testDir,
+      config: {},
     });
 
-    const restoredDocs = executeRetrievalPipeline(
-      restoredManager!.getDb(), 
-      "Planarians regrow head", 
+    const restoredDocs = await executeRetrievalPipeline(
+      restoredManager!.getDb(),
+      "Planarians regrow head",
       DEFAULT_AEGIS_CONFIG
     );
 

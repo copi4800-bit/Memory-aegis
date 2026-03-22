@@ -47,7 +47,7 @@ describe("AegisMemoryManager interface compliance", () => {
     // Sync first to ingest files
     await manager.sync({ reason: "test", force: true });
 
-    const results = await manager.search("Orca whale dolphin");
+    const results = await manager.search("Orca whale dolphin", {});
     expect(Array.isArray(results)).toBe(true);
 
     if (results.length > 0) {
@@ -74,7 +74,7 @@ describe("AegisMemoryManager interface compliance", () => {
     expect(status.fts?.enabled).toBe(true);
     expect(status.fts?.available).toBe(true);
     expect(status.custom?.aegis).toBeDefined();
-    expect((status.custom!.aegis as any).version).toBe("3.0.0");
+    expect((status.custom!.aegis as any).version).toBe("4.0.0");
   });
 
   it("implements sync()", async () => {
@@ -117,7 +117,7 @@ describe("Search after sync", () => {
   it("finds content from synced files", async () => {
     await manager.sync({ reason: "test", force: true });
 
-    const results = await manager.search("SkyClaw TypeScript");
+    const results = await manager.search("SkyClaw TypeScript", {});
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].snippet).toContain("SkyClaw");
   });
@@ -132,7 +132,7 @@ describe("Search after sync", () => {
   it("returns source=memory for memory files", async () => {
     await manager.sync({ reason: "test", force: true });
 
-    const results = await manager.search("Orca whale");
+    const results = await manager.search("Orca whale", {});
     if (results.length > 0) {
       expect(results[0].source).toBe("memory");
     }

@@ -1,11 +1,54 @@
 // ============================================================
-// Memory Aegis v3 — TypeScript Models for all 21 tables
+// Memory Aegis v4 — TypeScript Models
 // ============================================================
+
+// --- Taxonomy v1 (Frozen) ---
+
+/**
+ * Generic Taxonomy v1 — community-ready labeling.
+ * FROZEN: Không thêm/sửa/xóa taxonomy path sau khi freeze.
+ * Mọi thay đổi phải qua migration script.
+ */
+export const TAXONOMY_V1 = {
+  "identity.persona": "Thông tin định danh, vai trò, tính cách",
+  "identity.style": "Phong cách giao tiếp, ngôn ngữ, tone",
+  "policy.safety": "Quy tắc an toàn, ràng buộc bắt buộc, invariant",
+  "policy.directive": "Chỉ thị hành vi, hướng dẫn cố định",
+  "technical.infra": "Hạ tầng, server, deploy, CI/CD, database",
+  "technical.logic": "Logic nghiệp vụ, thuật toán, architecture patterns",
+  "technical.tooling": "Công cụ dev: git, docker, npm, terminal, IDE",
+  "technical.stack": "Ngôn ngữ & framework: TS, Python, React, Rust",
+  "technical.code": "Code snippet, hàm, class, interface",
+  "workflow.procedure": "Quy trình, hướng dẫn từng bước, SOP",
+  "workflow.decision": "Quyết định đã chốt, lý do, trade-off",
+  "context.session": "Ngữ cảnh phiên làm việc, tạm thời",
+  "context.project": "Thông tin dự án, timeline, stakeholder",
+  "knowledge.fact": "Sự kiện, dữ liệu, observation",
+  "knowledge.reference": "Tham chiếu tài liệu, link, nguồn",
+  "knowledge.lesson": "Bài học rút ra, post-mortem, retrospective",
+} as const;
+
+export type TaxonomyCategory = keyof typeof TAXONOMY_V1;
+
+export const TAXONOMY_CATEGORIES = Object.keys(TAXONOMY_V1) as TaxonomyCategory[];
+
+/**
+ * Map từ nhãn cũ (Bowerbird v1) sang nhãn mới (Taxonomy v1).
+ */
+export const TAXONOMY_MIGRATION_MAP: Record<string, TaxonomyCategory> = {
+  "rules.policy": "policy.safety",
+  "identity.persona": "identity.persona",
+  "workflow.procedure": "workflow.procedure",
+  "technical.tooling": "technical.tooling",
+  "technical.stack": "technical.stack",
+  "technical.architecture": "technical.logic",
+  "technical.code_snippet": "technical.code",
+};
 
 // --- Enums ---
 
 export type MemoryState = "volatile" | "stable" | "crystallized" | "suppressed" | "archived";
-export type NodeStatus = "active" | "expired" | "merged" | "deleted";
+export type NodeStatus = "active" | "expired" | "merged" | "deleted" | "superseded";
 export type EdgeStatus = "active" | "weakened" | "pruned";
 export type MemorySource = "memory" | "sessions";
 
@@ -38,7 +81,15 @@ export type CognitiveLayers =
   | "salmon"
   | "nutcracker"
   | "tardigrade"
-  | "planarian";
+  | "planarian"
+  | "bowerbird"
+  | "meerkat"
+  | "zebra-finch"
+  | "eagle"
+  | "scrub-jay"
+  | "dragonfly"
+  | "weaver-bird"
+  | "chameleon";
 
 // --- Core Tables ---
 
@@ -75,10 +126,24 @@ export interface MemoryNode {
   last_access_at: string | null;
   crystallized_at: string | null;
   extension_json: string | null;
+  // Episodic Memory (Scrub Jay)
+  episode_id: string | null;
   // OpenClaw compatibility fields
   source_path: string | null;
   source_start_line: number | null;
   source_end_line: number | null;
+}
+
+export interface Episode {
+  id: string;
+  parent_id: string | null;
+  type: string;
+  status: "active" | "concluded" | "summarized";
+  goal: string | null;
+  context_summary: string | null;
+  start_at: string;
+  end_at: string | null;
+  created_at: string;
 }
 
 export interface MemoryEdge {
@@ -341,6 +406,7 @@ export interface AegisTelemetry {
   db_size_bytes: number;
   wal_size_bytes: number;
   node_count_active: number;
+  node_count_superseded: number;
   node_count_archived: number;
   edge_count: number;
   entity_count: number;
@@ -348,6 +414,7 @@ export interface AegisTelemetry {
   dedup_hit_count: number;
   derived_relation_count: number;
   interaction_state_count: number;
+  unresolved_contradictions: number;
   latest_backup_at: string | null;
   latest_archive_at: string | null;
   growth_24h_bytes: number;
@@ -384,7 +451,6 @@ export interface AegisConfig {
   dampingFactor: number;
   decayHalfLifeDays: number;
   crystallizationThreshold: number;
-  embeddingAccelerator: boolean;
   maintenanceCron: string;
   maxNodesPerSearch: number;
   
@@ -402,12 +468,11 @@ export interface AegisConfig {
 }
 
 export const DEFAULT_AEGIS_CONFIG: AegisConfig = {
-  enabledLayers: ["elephant", "orca", "salmon", "dolphin"],
+  enabledLayers: ["elephant", "orca", "salmon", "dolphin", "dragonfly"],
   retrievalMaxHops: 4,
   dampingFactor: 0.5,
   decayHalfLifeDays: 30,
   crystallizationThreshold: 5,
-  embeddingAccelerator: false,
   maintenanceCron: "0 3 * * *",
   maxNodesPerSearch: 50,
   

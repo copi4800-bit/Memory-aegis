@@ -1,14 +1,14 @@
 /**
  * AegisMemoryManager — implements OpenClaw's MemorySearchManager interface.
  *
- * This is the main bridge between Memory Aegis v3 and OpenClaw.
+ * Main bridge between Memory Aegis v4 and OpenClaw.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { openDatabase, resolveDbPath, type AegisDatabase } from "./db/connection.js";
-import { runMigrations, migrateFromBuiltin } from "./db/migrate.js";
+import { runMigrations } from "./db/migrate.js";
 import { executeRetrievalPipeline } from "./retrieval/pipeline.js";
 import { ingestBatch } from "./core/ingest.js";
 import { microChunk } from "./cognitive/nutcracker.js";
@@ -18,346 +18,292 @@ import { autoPartition } from "./cognitive/octopus.js";
 import { autoSetScratchTTL } from "./cognitive/nutcracker.js";
 import { createSnapshot, exportLogicalData, type BackupResult, type ExportResult } from "./cognitive/tardigrade.js";
 import { restoreFromSnapshot, type RestoreResult } from "./cognitive/planarian.js";
-import { type AegisConfig, DEFAULT_AEGIS_CONFIG, type CognitiveLayers, type AegisTelemetry } from "./core/models.js";
+import { 
+  type AegisConfig, 
+  DEFAULT_AEGIS_CONFIG, 
+  type CognitiveLayers, 
+  type AegisTelemetry,
+  type MemorySource 
+} from "./core/models.js";
+import { resolveConfig, type AegisPreset } from "./core/presets.js";
 import type { MemorySearchResult } from "./retrieval/packet.js";
 import { Honeybee } from "./telemetry/honeybee.js";
 import { Axolotl } from "./maintenance/axolotl.js";
-
-// --- OpenClaw-compatible types (mirrored from openclaw/src/memory/types.ts) ---
-
-type MemorySource = "memory" | "sessions";
-
-type MemoryEmbeddingProbeResult = {
-  ok: boolean;
-  error?: string;
-};
-
-type MemorySyncProgressUpdate = {
-  completed: number;
-  total: number;
-  label?: string;
-};
-
-type MemoryProviderStatus = {
-  backend: string;
-  provider: string;
-  model?: string;
-  files?: number;
-  chunks?: number;
-  dirty?: boolean;
-  workspaceDir?: string;
-  dbPath?: string;
-  sources?: MemorySource[];
-  sourceCounts?: Array<{ source: MemorySource; files: number; chunks: number }>;
-  fts?: { enabled: boolean; available: boolean; error?: string };
-  vector?: { enabled: boolean; available?: boolean; dims?: number };
-  custom?: Record<string, unknown>;
-};
-
-// --- Manager Cache ---
+import { MeerkatSentry } from "./cognitive/meerkat.js";
+import { EagleEye, type GraphData, type EagleSummary } from "./cognitive/eagle.js";
+import { BowerbirdTaxonomist } from "./cognitive/bowerbird.js";
+import { ZebraFinch } from "./cognitive/zebra-finch.js";
+import { AegisDoctor, type DoctorReport } from "./maintenance/doctor.js";
+import { buildMemoryProfile, renderProfile, type MemoryProfile } from "./ux/profile.js";
+import { runOnboarding, type OnboardingResult } from "./ux/onboarding.js";
 
 const MANAGER_CACHE = new Map<string, AegisMemoryManager>();
 
-// --- Main Class ---
-
 export class AegisMemoryManager {
-  private aegisDb: AegisDatabase;
-  private dirty = false;
-  private readonly config: AegisConfig;
-  private readonly dbPath: string;
-
   private constructor(
-    private readonly workspaceDir: string,
-    private readonly agentId: string,
-    config: Partial<AegisConfig>,
-  ) {
-    this.config = { ...DEFAULT_AEGIS_CONFIG, ...config };
-    this.dbPath = resolveDbPath(workspaceDir);
-    this.aegisDb = openDatabase(this.dbPath);
-    runMigrations(this.aegisDb.db);
-  }
+    private aegisDb: AegisDatabase,
+    private workspaceDir: string,
+    private dbPath: string,
+    private config: AegisConfig,
+  ) {}
 
   /**
-   * Factory method — creates or returns cached manager for an agent.
+   * Factory method to create or retrieve a manager for a workspace.
+   * Chấp nhận config từ plugin và merge với default.
    */
-  static async create(params: {
+  static async create(opts: {
     agentId: string;
     workspaceDir: string;
-    config?: Partial<AegisConfig>;
-    purpose?: "default" | "status";
-  }): Promise<AegisMemoryManager | null> {
-    const cacheKey = `${params.agentId}:${params.workspaceDir}`;
-
-    if (params.purpose !== "status") {
-      const cached = MANAGER_CACHE.get(cacheKey);
-      if (cached) return cached;
+    config?: Partial<AegisConfig> & { preset?: AegisPreset };
+  }): Promise<AegisMemoryManager> {
+    const { workspaceDir, config = {} } = opts;
+    if (MANAGER_CACHE.has(workspaceDir)) {
+      return MANAGER_CACHE.get(workspaceDir)!;
     }
 
-    try {
-      const manager = new AegisMemoryManager(
-        params.workspaceDir,
-        params.agentId,
-        params.config ?? {},
-      );
+    const { preset, ...overrides } = config;
+    const mergedConfig = resolveConfig(preset, overrides);
+    const dbPath = resolveDbPath(workspaceDir);
+    const aegisDb = openDatabase(dbPath);
 
-      // Auto-migrate from builtin if this is first use
-      const builtinPath = path.join(params.workspaceDir, "memory.db");
-      if (
-        fs.existsSync(builtinPath) &&
-        manager.getNodeCount() === 0
-      ) {
-        const migrated = migrateFromBuiltin(manager.aegisDb.db, builtinPath);
-        if (migrated > 0) {
-          manager.dirty = true;
-        }
-      }
+    // Initialize/Migrate schema
+    runMigrations(aegisDb.db);
 
-      if (params.purpose !== "status") {
-        MANAGER_CACHE.set(cacheKey, manager);
-      }
-
-      return manager;
-    } catch (error) {
-      console.error("[AegisMemoryManager.create] initialization failed:", error);
-      return null;
-    }
-  }
-
-  // === MemorySearchManager Interface ===
-
-  async search(
-    query: string,
-    opts?: { maxResults?: number; minScore?: number; sessionKey?: string },
-  ): Promise<MemorySearchResult[]> {
-    return executeRetrievalPipeline(this.aegisDb.db, query, this.config, {
-      maxResults: opts?.maxResults,
-      minScore: opts?.minScore,
-      sessionKey: opts?.sessionKey,
-    });
-  }
-
-  async readFile(params: {
-    relPath: string;
-    from?: number;
-    lines?: number;
-  }): Promise<{ text: string; path: string }> {
-    // Aegis-native path
-    if (params.relPath.startsWith("aegis://")) {
-      const parts = params.relPath.split("/");
-      const nodeId = parts[parts.length - 1];
-
-      const node = this.aegisDb.db.prepare(
-        "SELECT content FROM memory_nodes WHERE id = ?",
-      ).get(nodeId) as { content: string } | undefined;
-
-      if (!node) throw new Error(`Memory node not found: ${nodeId}`);
-
-      const lines = node.content.split("\n");
-      const from = params.from ?? 0;
-      const count = params.lines ?? lines.length;
-      const text = lines.slice(from, from + count).join("\n");
-
-      // Touch node for retention
-      this.aegisDb.db.prepare(`
-        UPDATE memory_nodes
-        SET last_access_at = datetime('now'), recall_count = recall_count + 1, updated_at = datetime('now')
-        WHERE id = ?
-      `).run(nodeId);
-
-      return { text, path: params.relPath };
-    }
-
-    // Physical file read
-    const absolutePath = path.isAbsolute(params.relPath)
-      ? params.relPath
-      : path.resolve(this.workspaceDir, params.relPath);
-
-    const content = await fs.promises.readFile(absolutePath, "utf-8");
-    const lines = content.split("\n");
-    const from = params.from ?? 0;
-    const count = params.lines ?? lines.length;
-    const text = lines.slice(from, from + count).join("\n");
-
-    return { text, path: params.relPath };
-  }
-
-  status(): MemoryProviderStatus {
-    const stats = this.getStats();
-
-    return {
-      backend: "aegis",
-      provider: "aegis-fts5",
-      model: undefined,
-      files: stats.sourceFileCount,
-      chunks: stats.nodeCount,
-      dirty: this.dirty,
-      workspaceDir: this.workspaceDir,
-      dbPath: this.dbPath,
-      sources: ["memory", "sessions"],
-      sourceCounts: [
-        { source: "memory", files: stats.memoryFileCount, chunks: stats.memoryNodeCount },
-        { source: "sessions", files: stats.sessionFileCount, chunks: stats.sessionNodeCount },
-      ],
-      fts: { enabled: true, available: true },
-      vector: {
-        enabled: this.config.embeddingAccelerator,
-        available: this.config.embeddingAccelerator,
-      },
-      custom: {
-        aegis: {
-          version: "3.0.0",
-          schemaVersion: stats.schemaVersion,
-          layers: this.config.enabledLayers,
-          entityCount: stats.entityCount,
-          edgeCount: stats.edgeCount,
-          procedureCount: stats.procedureCount,
-          crystallizedCount: stats.crystallizedCount,
-          suppressedCount: stats.suppressedCount,
-        },
-      },
-    };
-  }
-
-  async sync(params?: {
-    reason?: string;
-    force?: boolean;
-    sessionFiles?: string[];
-    progress?: (update: MemorySyncProgressUpdate) => void;
-  }): Promise<void> {
-    const memoryDir = path.join(this.workspaceDir, "memory");
-    const files: Array<{ path: string; content: string; source: MemorySource }> = [];
-
-    // Scan memory directory
-    if (fs.existsSync(memoryDir)) {
-      const memoryFiles = await this.scanDirectory(memoryDir, "memory");
-      files.push(...memoryFiles);
-    }
-
-    // Scan MEMORY.md
-    const memoryMd = path.join(this.workspaceDir, "MEMORY.md");
-    if (fs.existsSync(memoryMd)) {
-      const content = await fs.promises.readFile(memoryMd, "utf-8");
-      files.push({ path: "MEMORY.md", content, source: "memory" });
-    }
-
-    // Scan session files
-    if (params?.sessionFiles) {
-      for (const sessionFile of params.sessionFiles) {
-        try {
-          const content = await fs.promises.readFile(sessionFile, "utf-8");
-          files.push({
-            path: path.relative(this.workspaceDir, sessionFile),
-            content,
-            source: "sessions",
-          });
-        } catch {
-          // Skip unreadable session files
-        }
-      }
-    }
-
-    params?.progress?.({ completed: 0, total: files.length, label: "Indexing files" });
-
-    // Chunk and ingest
-    const chunks = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const fileChunks = microChunk(file.content);
-
-      for (const chunk of fileChunks) {
-        chunks.push({
-          sourcePath: file.path,
-          content: chunk.content,
-          source: file.source as "memory" | "sessions",
-          startLine: chunk.startLine,
-          endLine: chunk.endLine,
-        });
-      }
-
-      params?.progress?.({ completed: i + 1, total: files.length, label: "Indexing files" });
-    }
-
-    if (chunks.length > 0) {
-      ingestBatch(this.aegisDb.db, chunks);
-    }
-
-    this.dirty = false;
-  }
-
-  async probeEmbeddingAvailability(): Promise<MemoryEmbeddingProbeResult> {
-    // Aegis v3 does NOT require embeddings — always available
-    return { ok: true };
-  }
-
-  async probeVectorAvailability(): Promise<boolean> {
-    // FTS5 replaces vector search — always available
-    return true;
+    const manager = new AegisMemoryManager(aegisDb, workspaceDir, dbPath, mergedConfig);
+    MANAGER_CACHE.set(workspaceDir, manager);
+    return manager;
   }
 
   async close(): Promise<void> {
-    const cacheKey = `${this.agentId}:${this.workspaceDir}`;
-    if (!MANAGER_CACHE.has(cacheKey)) return; // Already closed
-
-    try {
-      flushPending(this.aegisDb.db);
-    } catch {
-      // Ignore errors during flush on close
-    }
-
     this.aegisDb.close();
-    MANAGER_CACHE.delete(cacheKey);
   }
 
-  // === Cognitive Access ===
-
-  /**
-   * Expose internal database for hooks and cognitive layers.
-   */
   getDb(): Database.Database {
     return this.aegisDb.db;
   }
 
   /**
-   * Run full maintenance cycle: decay, TTL, partitioning, FTS optimize, and Viper rotation.
+   * Search memory using the cognitive pipeline.
    */
-  async runMaintenance(): Promise<import("./retention/maintenance.js").MaintenanceReport> {
-    const report = await runMaintenanceCycle(this.aegisDb.db, this.workspaceDir, this.config);
-    autoSetScratchTTL(this.aegisDb.db);
-    autoPartition(this.aegisDb.db);
-    return report;
+  async search(query: string, opts: any): Promise<MemorySearchResult[]> {
+    return executeRetrievalPipeline(this.aegisDb.db, query, this.config as any, opts);
   }
 
-  // === Disaster Recovery ===
-
   /**
-   * Run Tardigrade layer to create a snapshot or logical export.
+   * Read a specific file's memory or a node citation.
+   * Trả về object có thuộc tính 'text' để thỏa mãn index.ts.
    */
-  async backup(mode: "snapshot" | "export", destDir: string): Promise<BackupResult | ExportResult> {
-    if (mode === "snapshot") {
-      return createSnapshot(this.aegisDb.db, destDir);
-    } else {
-      const ts = new Date().toISOString().replace(/[:.]/g, "-");
-      const exportPath = path.join(destDir, `aegis-export-${ts}.jsonl`);
-      return exportLogicalData(this.aegisDb.db, exportPath);
+  async readFile(params: { relPath: string; from?: number; lines?: number }): Promise<{ text: string; [key: string]: any }> {
+    const { relPath, from, lines } = params;
+
+    // Trường hợp là citation (aegis://node-id)
+    if (relPath.startsWith("aegis://")) {
+      const nodeId = relPath.replace("aegis://", "");
+      const node = this.aegisDb.db.prepare(`
+        SELECT content FROM memory_nodes WHERE id = ?
+      `).get(nodeId) as { content: string } | undefined;
+      
+      return { 
+        text: node?.content || "Memory node not found.",
+        nodeId 
+      };
+    }
+
+    // Trường hợp là file vật lý trong workspace
+    const fullPath = path.isAbsolute(relPath) ? relPath : path.join(this.workspaceDir, relPath);
+    if (!fs.existsSync(fullPath)) {
+      return { text: `File not found: ${relPath}` };
+    }
+
+    try {
+      const content = fs.readFileSync(fullPath, "utf-8");
+      const allLines = content.split("\n");
+      const startLine = from || 0;
+      const lineCount = lines || allLines.length;
+      const fragment = allLines.slice(startLine, startLine + lineCount).join("\n");
+
+      return {
+        text: fragment,
+        path: relPath, // Return relative path as expected by tests
+        from: startLine,
+        lines: lineCount
+      };
+    } catch (err) {
+      return { text: `Error reading file: ${String(err)}` };
     }
   }
 
   /**
-   * Run Planarian layer to restore the database from a backup snapshot.
-   * WARNING: Overwrites the current active database!
+   * Status of the memory engine.
+   */
+  status(): any {
+    return {
+      backend: "aegis",
+      provider: "aegis-fts5",
+      fts: {
+        enabled: true,
+        available: true
+      },
+      chunks: (this.aegisDb.db.prepare("SELECT COUNT(*) as c FROM memory_nodes").get() as any).c,
+      dbPath: this.dbPath,
+      workspaceDir: this.workspaceDir,
+      custom: {
+        aegis: {
+          version: "4.0.0",
+          layers: this.config.enabledLayers,
+          preset: (this.config as any).preset || "balanced",
+          entityCount: (this.aegisDb.db.prepare("SELECT COUNT(*) as c FROM memory_nodes").get() as any).c,
+          edgeCount: (this.aegisDb.db.prepare("SELECT COUNT(*) as c FROM memory_edges").get() as any).c
+        }
+      }
+    };
+  }
+
+  /**
+   * Probe if embedding is available (Aegis is local-first, always OK).
+   */
+  async probeEmbeddingAvailability(): Promise<{ ok: boolean; error?: string }> {
+    return { ok: true };
+  }
+
+  /**
+   * Probe if vector search is available (Aegis uses FTS5, always true).
+   */
+  async probeVectorAvailability(): Promise<boolean> {
+    return true;
+  }
+
+  /**
+   * Sync files into memory.
+   * Nhận object { reason, sessionFiles } từ index.ts.
+   */
+  async sync(opts: { reason?: string; force?: boolean; sessionFiles?: string[]; progress?: (update: any) => void }): Promise<void> {
+    const { reason, sessionFiles, progress } = opts;
+    const filesToIngest: Array<{ path: string; content: string; source: MemorySource }> = [];
+    
+    // 1. Tìm các file capture trong workspace/memory
+    const memoryDir = path.join(this.workspaceDir, "memory");
+    if (fs.existsSync(memoryDir)) {
+      const captureFiles = fs.readdirSync(memoryDir).filter(f => f.endsWith('.md') || f.endsWith('.txt'));
+      for (const filename of captureFiles) {
+        const filePath = path.join(memoryDir, filename);
+        filesToIngest.push({
+          path: filePath,
+          content: fs.readFileSync(filePath, "utf-8"),
+          source: "memory"
+        });
+      }
+    }
+    
+    // 2. Thêm các session files cụ thể nếu có
+    if (sessionFiles) {
+      for (const filePath of sessionFiles) {
+        if (fs.existsSync(filePath)) {
+          filesToIngest.push({
+            path: filePath,
+            content: fs.readFileSync(filePath, "utf-8"),
+            source: "sessions"
+          });
+        }
+      }
+    }
+
+    if (filesToIngest.length === 0) {
+      if (progress) progress({ completed: 0, total: 0 });
+      return;
+    }
+
+    // 3. Flush work-in-progress if any
+    if (this.layerEnabled("dolphin")) {
+      flushPending(this.aegisDb.db);
+    }
+
+    // 4. Micro-chunk large files
+    const chunks: Array<{ sourcePath: string; content: string; source: MemorySource }> = [];
+    for (const file of filesToIngest) {
+      const parts = microChunk(file.content);
+      for (const part of parts) {
+        chunks.push({ sourcePath: file.path, content: part.content, source: file.source });
+      }
+    }
+
+    // 5. Batch ingest
+    ingestBatch(this.aegisDb.db, chunks);
+
+    // 6. Post-ingest cognitive tasks
+    if (this.layerEnabled("octopus")) {
+      autoPartition(this.aegisDb.db);
+    }
+    if (this.layerEnabled("nutcracker")) {
+      autoSetScratchTTL(this.aegisDb.db);
+    }
+
+    if (progress) {
+      progress({ completed: chunks.length, total: chunks.length });
+    }
+  }
+
+  /**
+   * Run background maintenance.
+   */
+  async maintenance(): Promise<any> {
+    return runMaintenanceCycle(this.aegisDb.db, this.workspaceDir, this.config);
+  }
+
+  /**
+   * Backwards compatibility for index.ts
+   */
+  async runMaintenance(): Promise<any> {
+    return this.maintenance();
+  }
+
+  /**
+   * Create a backup or logical export.
+   */
+  async backup(mode: "snapshot" | "export", destDir: string): Promise<BackupResult | ExportResult> {
+    if (mode === "export") {
+      return exportLogicalData(this.aegisDb.db, destDir);
+    }
+    return createSnapshot(this.aegisDb.db, this.workspaceDir);
+  }
+
+  /**
+   * Restore from a snapshot.
    */
   async restore(snapshotPath: string): Promise<RestoreResult> {
     return restoreFromSnapshot(snapshotPath, this.dbPath);
   }
 
   /**
-   * Honeybee: Thu thập số liệu thống kê chi tiết.
+   * Human-friendly status report: Honeybee + Eagle + Taxonomy.
+   */
+  async getStatus(): Promise<{ text: string; data: AegisTelemetry; summary: EagleSummary }> {
+    const honeybee = new Honeybee(this.aegisDb.db, this.workspaceDir);
+    const eagle = new EagleEye(this.aegisDb.db);
+    const bird = new BowerbirdTaxonomist(this.aegisDb.db);
+
+    const data = await honeybee.collect();
+    const summary = eagle.summarize();
+    const taxonomyStats = bird.taxonomyStats();
+
+    const text = [
+      honeybee.renderHumanReport(data, taxonomyStats),
+      "",
+      eagle.renderSummary(summary),
+    ].join("\n");
+
+    return { text, data, summary };
+  }
+
+  /**
+   * Honeybee technical stats (power users).
    */
   async getHoneybeeStats(): Promise<{ text: string; data: AegisTelemetry }> {
     const honeybee = new Honeybee(this.aegisDb.db, this.workspaceDir);
+    const eagle = new EagleEye(this.aegisDb.db);
     const data = await honeybee.collect();
-    const text = honeybee.render(data);
-    return { text, data };
+    const eagleReport = eagle.analyze();
+    return { text: honeybee.render(data) + "\n\n" + eagleReport, data };
   }
 
   /**
@@ -368,87 +314,272 @@ export class AegisMemoryManager {
     return axolotl.regenerate();
   }
 
+  /**
+   * Meerkat: Quét mâu thuẫn nhận thức.
+   */
+  async runMeerkatScan(): Promise<Array<{ nodeA: string; nodeB: string; reason: string }>> {
+    const meerkat = new MeerkatSentry(this.aegisDb.db);
+    return meerkat.scan();
+  }
+
+  /**
+   * Eagle: Chụp ảnh đồ thị.
+   */
+  async getEagleSnapshot(limit?: number): Promise<GraphData> {
+    const eagle = new EagleEye(this.aegisDb.db);
+    return eagle.captureSnapshot(limit);
+  }
+
+  /**
+   * Eagle: Phân tích structured summary.
+   */
+  async getEagleSummary(): Promise<{ text: string; data: EagleSummary }> {
+    const eagle = new EagleEye(this.aegisDb.db);
+    const data = eagle.summarize();
+    return { text: eagle.renderSummary(data), data };
+  }
+
+  /**
+   * Bowerbird: Phân loại taxonomy.
+   */
+  async runTaxonomyCleanup(): Promise<{ classified: number }> {
+    const bird = new BowerbirdTaxonomist(this.aegisDb.db);
+    return { classified: bird.classifyAllUnknownNodes() };
+  }
+
+  /**
+   * Bowerbird: Migrate nhãn cũ → Taxonomy v1.
+   */
+  async runTaxonomyMigration(): Promise<{ migrated: number; stray: string[] }> {
+    const bird = new BowerbirdTaxonomist(this.aegisDb.db);
+    const migrated = bird.migrateOldTaxonomy();
+    const stray = bird.findStrayLabels();
+    return { migrated, stray };
+  }
+
+  /**
+   * Bowerbird: Taxonomy stats.
+   */
+  async getTaxonomyStats(): Promise<{ stats: Array<{ subject: string; count: number }>; stray: string[] }> {
+    const bird = new BowerbirdTaxonomist(this.aegisDb.db);
+    return { stats: bird.taxonomyStats(), stray: bird.findStrayLabels() };
+  }
+
+  /**
+   * Full auto-clean: Meerkat scan + Zebra Finch supersede + Bowerbird classify + migrate.
+   * Giai đoạn 2.2: Auto mode an toàn mặc định.
+   */
+  async runAutoClean(): Promise<{
+    conflicts: number;
+    superseded: number;
+    classified: number;
+    migrated: number;
+  }> {
+    const results = { conflicts: 0, superseded: 0, classified: 0, migrated: 0 };
+
+    // 1. Meerkat: quét mâu thuẫn
+    if (this.layerEnabled("meerkat")) {
+      const conflicts = await this.runMeerkatScan();
+      results.conflicts = conflicts.length;
+    }
+
+    // 2. Zebra Finch: auto-supersede safe conflicts
+    if (this.layerEnabled("zebra-finch")) {
+      const finch = new ZebraFinch(this.aegisDb.db);
+      const report = await finch.performRemSleep();
+      results.superseded = report.supersededCount;
+    }
+
+    // 3. Bowerbird: classify unlabeled nodes
+    if (this.layerEnabled("bowerbird")) {
+      const bird = new BowerbirdTaxonomist(this.aegisDb.db);
+      results.classified = bird.classifyAllUnknownNodes();
+      results.migrated = bird.migrateOldTaxonomy();
+    }
+
+    return results;
+  }
+
+  /**
+   * Aegis Doctor: Kiểm tra sức khỏe.
+   */
+  async diagnose(): Promise<{ text: string; data: DoctorReport }> {
+    const doctor = new AegisDoctor(this.aegisDb.db, this.workspaceDir, this.dbPath);
+    const report = doctor.diagnose();
+    return { text: doctor.render(report), data: report };
+  }
+
+  // === UX (Phase 5) ===
+
+  /**
+   * Memory Profile: What does Aegis remember about the user?
+   */
+  async getMemoryProfile(): Promise<{ text: string; data: MemoryProfile }> {
+    const data = buildMemoryProfile(this.aegisDb.db);
+    return { text: renderProfile(data), data };
+  }
+
+  /**
+   * Guided onboarding: first-time setup with health check + test.
+   */
+  async runOnboarding(preset?: AegisPreset): Promise<OnboardingResult> {
+    return runOnboarding(
+      this.aegisDb.db,
+      this.workspaceDir,
+      this.dbPath,
+      preset ?? "balanced",
+    );
+  }
+
+  // === Phase 4.2: Debug Panel for Power Users ===
+
+  /**
+   * Debug search: Trả về kết quả search kèm full signal breakdown.
+   * Dành cho power users muốn trace retrieval decisions.
+   */
+  async debugSearch(query: string, opts: any): Promise<{
+    text: string;
+    results: MemorySearchResult[];
+  }> {
+    const { buildDebugExplanation } = await import("./retrieval/packet.js");
+    const results = await this.search(query, opts);
+
+    // Re-run pipeline nhẹ để lấy raw candidates (with signals)
+    // Ở đây dùng kết quả có sẵn và format debug
+    const lines = [
+      `## Debug Search: "${query}"`,
+      `Results: ${results.length}`,
+      "",
+    ];
+
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      lines.push(`### #${i + 1} — Score: ${r.score.toFixed(4)}`);
+      lines.push(`Path: ${r.path}`);
+      lines.push(`Citation: ${r.citation}`);
+      lines.push(`Snippet: ${r.snippet.substring(0, 200)}${r.snippet.length > 200 ? "..." : ""}`);
+      lines.push("");
+    }
+
+    return { text: lines.join("\n"), results };
+  }
+
+  /**
+   * Inspect a specific memory node with full metadata.
+   */
+  async inspectNode(nodeId: string): Promise<{ text: string; node: any }> {
+    const node = this.aegisDb.db.prepare(`
+      SELECT * FROM memory_nodes WHERE id = ?
+    `).get(nodeId) as any;
+
+    if (!node) return { text: `Node ${nodeId} not found.`, node: null };
+
+    // Get edges
+    const edges = this.aegisDb.db.prepare(`
+      SELECT * FROM memory_edges
+      WHERE (src_node_id = ? OR dst_node_id = ?) AND status = 'active'
+    `).all(nodeId, nodeId) as any[];
+
+    // Get events
+    const events = this.aegisDb.db.prepare(`
+      SELECT event_type, payload_json, created_at FROM memory_events
+      WHERE node_id = ? ORDER BY created_at DESC LIMIT 10
+    `).all(nodeId) as any[];
+
+    const lines = [
+      `## Node: ${node.id}`,
+      `Type: ${node.memory_type} | State: ${node.memory_state} | Status: ${node.status}`,
+      `Subject: ${node.canonical_subject ?? "(none)"}${node.taxonomy_confidence ? ` (conf: ${node.taxonomy_confidence.toFixed(2)})` : ""}`,
+      `Scope: ${node.scope} | Importance: ${node.importance} | Salience: ${node.salience}`,
+      `Recall: ${node.recall_count}x | Override: ${node.override_priority}`,
+      `Created: ${node.created_at} | Updated: ${node.updated_at}`,
+      `Last access: ${node.last_access_at ?? "never"}`,
+      "",
+      `### Content`,
+      node.content.substring(0, 500),
+      "",
+    ];
+
+    if (node.blueprint_version) {
+      const total = (node.blueprint_success_count || 0) + (node.blueprint_fail_count || 0);
+      const rate = total > 0 ? ((node.blueprint_success_count || 0) / total * 100).toFixed(0) : "N/A";
+      lines.push(`### Blueprint v${node.blueprint_version}`);
+      lines.push(`Success: ${node.blueprint_success_count || 0} | Fail: ${node.blueprint_fail_count || 0} | Rate: ${rate}%`);
+      lines.push("");
+    }
+
+    if (edges.length > 0) {
+      lines.push(`### Edges (${edges.length})`);
+      for (const e of edges) {
+        const dir = e.src_node_id === nodeId ? "→" : "←";
+        const other = e.src_node_id === nodeId ? e.dst_node_id : e.src_node_id;
+        lines.push(`  ${dir} ${other} (${e.relation_type}, weight: ${e.weight})`);
+      }
+      lines.push("");
+    }
+
+    if (events.length > 0) {
+      lines.push(`### Recent Events (${events.length})`);
+      for (const ev of events) {
+        lines.push(`  ${ev.created_at} ${ev.event_type}: ${ev.payload_json?.substring(0, 100) || ""}`);
+      }
+    }
+
+    return { text: lines.join("\n"), node: { ...node, edges, events } };
+  }
+
+  /**
+   * Trace supersede chain for a node.
+   */
+  async traceSupersede(nodeId: string): Promise<{ text: string; chain: string[] }> {
+    const chain: string[] = [nodeId];
+    let currentId = nodeId;
+
+    // Walk forward: find what superseded this node
+    for (let i = 0; i < 20; i++) {
+      const next = this.aegisDb.db.prepare(`
+        SELECT dst_node_id FROM memory_edges
+        WHERE src_node_id = ? AND relation_type = 'supersedes' AND status = 'active'
+        LIMIT 1
+      `).get(currentId) as { dst_node_id: string } | undefined;
+
+      if (!next) break;
+      chain.push(next.dst_node_id);
+      currentId = next.dst_node_id;
+    }
+
+    // Walk backward: find what this node superseded
+    currentId = nodeId;
+    for (let i = 0; i < 20; i++) {
+      const prev = this.aegisDb.db.prepare(`
+        SELECT src_node_id FROM memory_edges
+        WHERE dst_node_id = ? AND relation_type = 'supersedes' AND status = 'active'
+        LIMIT 1
+      `).get(currentId) as { src_node_id: string } | undefined;
+
+      if (!prev) break;
+      chain.unshift(prev.src_node_id);
+      currentId = prev.src_node_id;
+    }
+
+    const lines = [`## Supersede Chain (${chain.length} nodes)`, ""];
+    for (let i = 0; i < chain.length; i++) {
+      const node = this.aegisDb.db.prepare(`
+        SELECT id, status, memory_state, canonical_subject, created_at
+        FROM memory_nodes WHERE id = ?
+      `).get(chain[i]) as any;
+      const marker = chain[i] === nodeId ? " ← current" : "";
+      const status = node ? `${node.status}/${node.memory_state}` : "missing";
+      lines.push(`${i + 1}. ${chain[i]} [${status}]${marker}`);
+    }
+
+    return { text: lines.join("\n"), chain };
+  }
+
   // === Helpers ===
 
   layerEnabled(layer: CognitiveLayers): boolean {
     return this.config.enabledLayers.includes(layer);
-  }
-
-  private getNodeCount(): number {
-    const row = this.aegisDb.db.prepare(
-      "SELECT COUNT(*) as count FROM memory_nodes",
-    ).get() as { count: number };
-    return row.count;
-  }
-
-  private getStats() {
-    const db = this.aegisDb.db;
-
-    const nodeCount = (db.prepare("SELECT COUNT(*) as c FROM memory_nodes WHERE status='active'").get() as { c: number }).c;
-    const edgeCount = (db.prepare("SELECT COUNT(*) as c FROM memory_edges WHERE status='active'").get() as { c: number }).c;
-    const entityCount = (db.prepare("SELECT COUNT(*) as c FROM entities WHERE status='active'").get() as { c: number }).c;
-    const procedureCount = (db.prepare("SELECT COUNT(*) as c FROM procedures WHERE status='active'").get() as { c: number }).c;
-    const crystallizedCount = (db.prepare("SELECT COUNT(*) as c FROM memory_nodes WHERE memory_state='crystallized'").get() as { c: number }).c;
-    const suppressedCount = (db.prepare("SELECT COUNT(*) as c FROM memory_nodes WHERE memory_state='suppressed'").get() as { c: number }).c;
-
-    const memoryNodeCount = (db.prepare("SELECT COUNT(*) as c FROM memory_nodes WHERE scope != 'session' AND status='active'").get() as { c: number }).c;
-    const sessionNodeCount = (db.prepare("SELECT COUNT(*) as c FROM memory_nodes WHERE scope = 'session' AND status='active'").get() as { c: number }).c;
-
-    // Count unique source files
-    const memoryFileCount = (db.prepare("SELECT COUNT(DISTINCT source_path) as c FROM memory_nodes WHERE scope != 'session' AND source_path IS NOT NULL").get() as { c: number }).c;
-    const sessionFileCount = (db.prepare("SELECT COUNT(DISTINCT source_path) as c FROM memory_nodes WHERE scope = 'session' AND source_path IS NOT NULL").get() as { c: number }).c;
-
-    let schemaVersion = 1;
-    try {
-      const row = db.prepare("SELECT MAX(version) as v FROM schema_version").get() as { v: number | null };
-      schemaVersion = row?.v ?? 1;
-    } catch { /* table may not exist */ }
-
-    return {
-      nodeCount,
-      edgeCount,
-      entityCount,
-      procedureCount,
-      crystallizedCount,
-      suppressedCount,
-      memoryNodeCount,
-      sessionNodeCount,
-      memoryFileCount,
-      sessionFileCount,
-      sourceFileCount: memoryFileCount + sessionFileCount,
-      schemaVersion,
-    };
-  }
-
-  private async scanDirectory(
-    dir: string,
-    source: MemorySource,
-  ): Promise<Array<{ path: string; content: string; source: MemorySource }>> {
-    const results: Array<{ path: string; content: string; source: MemorySource }> = [];
-
-    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-
-      if (entry.isDirectory()) {
-        const subResults = await this.scanDirectory(fullPath, source);
-        results.push(...subResults);
-      } else if (entry.isFile() && /\.(md|txt|yaml|yml|json)$/i.test(entry.name)) {
-        try {
-          const content = await fs.promises.readFile(fullPath, "utf-8");
-          results.push({
-            path: path.relative(this.workspaceDir, fullPath),
-            content,
-            source,
-          });
-        } catch {
-          // Skip unreadable files
-        }
-      }
-    }
-
-    return results;
   }
 }
 

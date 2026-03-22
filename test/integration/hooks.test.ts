@@ -294,7 +294,7 @@ describe("createMessageHooks", () => {
 // --- Manager maintenance ---
 
 describe("AegisMemoryManager.runMaintenance", () => {
-  it("runs full maintenance cycle", () => {
+  it("runs full maintenance cycle", async () => {
     const db = manager.getDb();
     const now = nowISO();
     const past = new Date(Date.now() - 1000).toISOString();
@@ -305,7 +305,7 @@ describe("AegisMemoryManager.runMaintenance", () => {
       VALUES ('maint-ttl', 'working_scratch', 'expired', 'active', 'volatile', ?, 0.5, ?, ?)
     `).run(past, now, now);
 
-    const report = manager.runMaintenance();
+    const report = await manager.runMaintenance();
 
     expect(report.ttlExpired).toBeGreaterThanOrEqual(1);
 
@@ -313,8 +313,8 @@ describe("AegisMemoryManager.runMaintenance", () => {
     expect(node.status).toBe("expired");
   });
 
-  it("returns a valid maintenance report", () => {
-    const report = manager.runMaintenance();
+  it("returns a valid maintenance report", async () => {
+    const report = await manager.runMaintenance();
     expect(report).toHaveProperty("stateTransitions");
     expect(report).toHaveProperty("archived");
     expect(report).toHaveProperty("ttlExpired");

@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
 
 INSERT OR IGNORE INTO schema_version(version, applied_at, description)
-VALUES (1, datetime('now'), 'Memory Aegis v3 initial schema');
+VALUES (4, datetime('now'), 'Memory Aegis v4 schema');
 
 CREATE TABLE IF NOT EXISTS memory_nodes (
     id TEXT PRIMARY KEY,
@@ -46,12 +46,14 @@ CREATE TABLE IF NOT EXISTS memory_nodes (
     last_access_at TEXT,
     crystallized_at TEXT,
     extension_json TEXT,
+    -- Episodic Memory (Scrub Jay)
+    episode_id TEXT,
     -- Source tracking for OpenClaw compatibility
     source_path TEXT,
     source_start_line INTEGER,
     source_end_line INTEGER,
     CHECK (memory_state IN ('volatile', 'stable', 'crystallized', 'suppressed', 'archived')),
-    CHECK (status IN ('active', 'expired', 'merged', 'deleted')),
+    CHECK (status IN ('active', 'expired', 'merged', 'deleted', 'superseded')),
     CHECK (importance >= 0 AND importance <= 1),
     CHECK (salience >= 0 AND salience <= 1),
     CHECK (base_decay_rate >= 0),
@@ -104,7 +106,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memory_nodes_fts USING fts5(
     scope,
     memory_type,
     content='memory_nodes',
-    content_rowid='rowid'
+    content_rowid='rowid',
+    tokenize="porter unicode61"
 );
 
 -- ============================================================
@@ -438,12 +441,35 @@ CREATE INDEX IF NOT EXISTS idx_memory_nodes_scope_session
     WHERE scope IS NOT NULL;
 
 -- ============================================================
+-- Scrub Jay — Episodic Memory
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS episodes (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT,
+    type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    goal TEXT,
+    context_summary TEXT,
+    start_at TEXT NOT NULL,
+    end_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(parent_id) REFERENCES episodes(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_episodes_type ON episodes(type);
+CREATE INDEX IF NOT EXISTS idx_episodes_status ON episodes(status);
+CREATE INDEX IF NOT EXISTS idx_episodes_start ON episodes(start_at);
+CREATE INDEX IF NOT EXISTS idx_memory_nodes_episode ON memory_nodes(episode_id);
+
+-- ============================================================
 -- Honeybee Telemetry View
 -- ============================================================
 
 CREATE VIEW IF NOT EXISTS v_aegis_telemetry AS
 SELECT
     (SELECT COUNT(*) FROM memory_nodes WHERE status = 'active') as node_count_active,
+    (SELECT COUNT(*) FROM memory_nodes WHERE status = 'superseded') as node_count_superseded,
     (SELECT COUNT(*) FROM memory_nodes WHERE memory_state = 'archived') as node_count_archived,
     (SELECT COUNT(*) FROM memory_edges WHERE status = 'active') as edge_count,
     (SELECT COUNT(*) FROM entities) as entity_count,
@@ -451,6 +477,7 @@ SELECT
     (SELECT COUNT(*) FROM dedup_routes) as dedup_hit_count,
     (SELECT COUNT(*) FROM derived_relations) as derived_relation_count,
     (SELECT COUNT(*) FROM interaction_states) as interaction_state_count,
+    (SELECT COUNT(*) FROM drift_events WHERE resolved = 0) as unresolved_contradictions,
     (SELECT MAX(created_at) FROM memory_events WHERE event_type = 'backup_completed') as latest_backup_at,
     (SELECT MAX(created_at) FROM memory_events WHERE event_type = 'archive_completed') as latest_archive_at;
 

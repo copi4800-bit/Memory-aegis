@@ -22,6 +22,25 @@ export interface PacketCandidate {
   hopCount?: number;
   matchedEntities?: string[];
   inferredVia?: string;
+  /** Phase 4.3: Detailed signal breakdown for explainability */
+  signals?: RetrievalSignals;
+}
+
+/**
+ * Phase 4.3: Explainable Retrieval — full signal breakdown.
+ * Mỗi result có thể giải thích gọn lý do nó được chọn.
+ */
+export interface RetrievalSignals {
+  lexicalHit: number;       // FTS5 score
+  semanticRescue: number;   // Dragonfly rescue score (0 nếu không rescue)
+  graphActivation: number;  // Orca spreading activation score
+  procedureBonus: number;   // Weaver Bird bonus
+  episodeBoost: number;     // Scrub Jay episode sibling boost
+  policyPriority: number;   // Elephant override priority
+  entityOverlap: number;    // Dolphin entity matching
+  retention: number;        // Memory decay/retention score
+  scopeFit: number;         // Session/scope matching
+  rescueStrategy?: "direct" | "synonym" | "trigram"; // Dragonfly strategy used
 }
 
 /**
@@ -103,25 +122,82 @@ function formatCitation(node: MemoryNode, explanation: string): string {
 
 /**
  * Build human-readable explanation for why a result was included.
+ * Phase 4.3: Enhanced with full signal breakdown.
  */
 export function buildExplanation(candidate: PacketCandidate): string {
   const parts: string[] = [];
+  const s = candidate.signals;
 
+  // Safety override — highest priority
   if (candidate.node.memory_type === "trauma" || candidate.node.memory_type === "invariant") {
     parts.push("safety override");
   }
-  if (candidate.hopCount !== undefined && candidate.hopCount > 0) {
-    parts.push(`graph activation (hop ${candidate.hopCount})`);
+
+  if (s) {
+    // Signal-based explanation (Phase 4.3)
+    if (s.lexicalHit > 0) parts.push(`lexical hit (${s.lexicalHit.toFixed(2)})`);
+    if (s.semanticRescue > 0) {
+      const strat = s.rescueStrategy ? ` via ${s.rescueStrategy}` : "";
+      parts.push(`semantic rescue${strat} (${s.semanticRescue.toFixed(2)})`);
+    }
+    if (s.graphActivation > 0 && candidate.hopCount !== undefined && candidate.hopCount > 0) {
+      parts.push(`graph hop ${candidate.hopCount} (${s.graphActivation.toFixed(2)})`);
+    }
+    if (s.entityOverlap > 0) {
+      const entities = candidate.matchedEntities?.join(", ") || "";
+      parts.push(`entity${entities ? ": " + entities : ""}`);
+    }
+    if (s.procedureBonus > 0) parts.push("procedure bonus");
+    if (s.episodeBoost > 0) parts.push(`episode boost (${s.episodeBoost.toFixed(2)})`);
+    if (s.policyPriority > 0) parts.push("policy priority");
+  } else {
+    // Legacy fallback
+    if (candidate.hopCount !== undefined && candidate.hopCount > 0) {
+      parts.push(`graph activation (hop ${candidate.hopCount})`);
+    }
+    if (candidate.matchedEntities && candidate.matchedEntities.length > 0) {
+      parts.push("entity: " + candidate.matchedEntities.join(", "));
+    }
   }
-  if (candidate.matchedEntities && candidate.matchedEntities.length > 0) {
-    parts.push("entity: " + candidate.matchedEntities.join(", "));
-  }
+
   if (candidate.node.memory_state === "crystallized") {
-    parts.push("crystallized knowledge");
+    parts.push("crystallized");
   }
   if (candidate.inferredVia) {
     parts.push("inferred via " + candidate.inferredVia);
   }
 
   return parts.join("; ") || "relevance match";
+}
+
+/**
+ * Phase 4.2: Debug-level explanation for power users.
+ * Returns full signal table as formatted text.
+ */
+export function buildDebugExplanation(candidate: PacketCandidate): string {
+  const s = candidate.signals;
+  if (!s) return buildExplanation(candidate);
+
+  const lines = [
+    `Node: ${candidate.node.id} (${candidate.node.memory_type})`,
+    `Subject: ${candidate.node.canonical_subject ?? "(none)"}`,
+    `State: ${candidate.node.memory_state} | Status: ${candidate.node.status}`,
+    `Final Score: ${candidate.score.toFixed(4)}`,
+    `--- Signals ---`,
+    `  Lexical (FTS5):      ${s.lexicalHit.toFixed(3)}`,
+    `  Semantic Rescue:     ${s.semanticRescue.toFixed(3)}${s.rescueStrategy ? ` (${s.rescueStrategy})` : ""}`,
+    `  Graph Activation:    ${s.graphActivation.toFixed(3)}${candidate.hopCount ? ` (hop ${candidate.hopCount})` : ""}`,
+    `  Entity Overlap:      ${s.entityOverlap.toFixed(3)}`,
+    `  Procedure Bonus:     ${s.procedureBonus.toFixed(3)}`,
+    `  Episode Boost:       ${s.episodeBoost.toFixed(3)}`,
+    `  Policy Priority:     ${s.policyPriority.toFixed(3)}`,
+    `  Retention:           ${s.retention.toFixed(3)}`,
+    `  Scope Fit:           ${s.scopeFit.toFixed(3)}`,
+  ];
+
+  if (candidate.matchedEntities?.length) {
+    lines.push(`  Matched Entities:    ${candidate.matchedEntities.join(", ")}`);
+  }
+
+  return lines.join("\n");
 }

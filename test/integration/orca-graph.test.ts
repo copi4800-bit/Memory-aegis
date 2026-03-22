@@ -303,7 +303,7 @@ describe("Hebbian reinforcement", () => {
 });
 
 describe("End-to-end: graph-enhanced retrieval", () => {
-  it("finds related content through entity graph that FTS alone would miss", () => {
+  it("finds related content through entity graph that FTS alone would miss", async () => {
     // Node A: directly matches "quantum computing"
     ingestChunk(db.db, {
       sourcePath: "memory/quantum.md",
@@ -320,12 +320,12 @@ describe("End-to-end: graph-enhanced retrieval", () => {
 
     // Search for quantum computing — should find node A directly,
     // and potentially node B through the shared @drsmith entity
-    const results = executeRetrievalPipeline(db.db, "quantum computing", config);
+    const results = await executeRetrievalPipeline(db.db, "quantum computing", config);
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].snippet).toContain("quantum");
   });
 
-  it("entity graph boosts results from related nodes", () => {
+  it("entity graph boosts results from related nodes", async () => {
     // Create a cluster of nodes about the same person
     ingestChunk(db.db, {
       sourcePath: "memory/profile.md",
@@ -345,7 +345,7 @@ describe("End-to-end: graph-enhanced retrieval", () => {
       source: "memory",
     });
 
-    const results = executeRetrievalPipeline(db.db, "jane engineer distributed", config);
+    const results = await executeRetrievalPipeline(db.db, "jane engineer distributed", config);
     expect(results.length).toBeGreaterThan(0);
   });
 });

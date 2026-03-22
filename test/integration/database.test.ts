@@ -60,9 +60,9 @@ describe("Database initialization", () => {
     expect(vtables.some((t) => t.name === "memory_nodes_fts")).toBe(true);
   });
 
-  it("has schema version 1", () => {
+  it("has latest schema version", () => {
     const version = getSchemaVersion(testDb.db);
-    expect(version).toBe(1);
+    expect(version).toBe(6);
   });
 
   it("WAL mode is enabled", () => {

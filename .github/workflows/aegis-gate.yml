@@ -1,0 +1,84 @@
+name: Aegis Gate Check
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "src/**"
+      - "test/**"
+      - "benchmark/**"
+      - "package.json"
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck:
+    name: TypeScript Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npx vitest run test/unit/ --reporter=verbose
+
+  gate-tests:
+    name: Gate Tests (Phase 0)
+    runs-on: ubuntu-latest
+    needs: [typecheck, unit-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npm rebuild better-sqlite3
+      - run: npx vitest run test/gate/ --reporter=verbose
+
+  stress-tests:
+    name: Stress Tests
+    runs-on: ubuntu-latest
+    needs: [typecheck, unit-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npm rebuild better-sqlite3
+      - run: npx vitest run test/stress/ --reporter=verbose
+
+  benchmark:
+    name: Public Benchmark
+    runs-on: ubuntu-latest
+    needs: [gate-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npm rebuild better-sqlite3
+      - run: npx tsx benchmark/run-all.ts --json --output benchmark-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report
+          path: benchmark-report.json
+          retention-days: 30

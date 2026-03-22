@@ -25,26 +25,26 @@ afterEach(() => {
 });
 
 describe("Ingest → Search round-trip", () => {
-  it("ingests content and finds it via FTS5", () => {
+  it("ingests content and finds it via FTS5", async () => {
     ingestChunk(db.db, {
       sourcePath: "memory/2024-01-15.md",
       content: "The SkyClaw project uses TypeScript and SQLite for local-first AI memory.",
       source: "memory",
     });
 
-    const results = executeRetrievalPipeline(db.db, "SkyClaw TypeScript", config);
+    const results = await executeRetrievalPipeline(db.db, "SkyClaw TypeScript", config);
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].snippet).toContain("SkyClaw");
   });
 
-  it("returns results with valid MemorySearchResult shape", () => {
+  it("returns results with valid MemorySearchResult shape", async () => {
     ingestChunk(db.db, {
       sourcePath: "memory/test.md",
       content: "OpenClaw is a personal AI assistant platform.",
       source: "memory",
     });
 
-    const results = executeRetrievalPipeline(db.db, "OpenClaw assistant", config);
+    const results = await executeRetrievalPipeline(db.db, "OpenClaw assistant", config);
     expect(results.length).toBeGreaterThan(0);
 
     const result = results[0];
@@ -60,7 +60,7 @@ describe("Ingest → Search round-trip", () => {
     expect(["memory", "sessions"]).toContain(result.source);
   });
 
-  it("respects maxResults limit", () => {
+  it("respects maxResults limit", async () => {
     // Ingest many items
     for (let i = 0; i < 20; i++) {
       ingestChunk(db.db, {
@@ -70,7 +70,7 @@ describe("Ingest → Search round-trip", () => {
       });
     }
 
-    const results = executeRetrievalPipeline(db.db, "artificial intelligence", config, {
+    const results = await executeRetrievalPipeline(db.db, "artificial intelligence", config, {
       maxResults: 3,
     });
     expect(results.length).toBeLessThanOrEqual(3);
@@ -92,7 +92,7 @@ describe("Ingest → Search round-trip", () => {
     expect(node.frequency_count).toBe(2);
   });
 
-  it("finds content via partial query", () => {
+  it("finds content via partial query", async () => {
     ingestChunk(db.db, {
       sourcePath: "memory/deploy.md",
       content: "Deploy the application to production using Docker containers on AWS EC2.",
@@ -100,18 +100,18 @@ describe("Ingest → Search round-trip", () => {
     });
 
     // "Docker container" — "container*" prefix matches "containers" via FTS5
-    const results = executeRetrievalPipeline(db.db, "Docker container", config);
+    const results = await executeRetrievalPipeline(db.db, "Docker container", config);
     expect(results.length).toBeGreaterThan(0);
   });
 
-  it("returns empty for unrelated query", () => {
+  it("returns empty for unrelated query", async () => {
     ingestChunk(db.db, {
       sourcePath: "memory/cats.md",
       content: "Cats are wonderful pets that love to sleep.",
       source: "memory",
     });
 
-    const results = executeRetrievalPipeline(db.db, "quantum physics thermodynamics", config);
+    const results = await executeRetrievalPipeline(db.db, "quantum physics thermodynamics", config);
     // May return 0 or low-score results
     for (const r of results) {
       // If any results returned, they should have low scores
@@ -121,7 +121,7 @@ describe("Ingest → Search round-trip", () => {
 });
 
 describe("Batch ingest", () => {
-  it("ingests multiple chunks in one transaction", () => {
+  it("ingests multiple chunks in one transaction", async () => {
     const chunks = [
       { sourcePath: "memory/a.md", content: "First chunk about React components.", source: "memory" as const },
       { sourcePath: "memory/b.md", content: "Second chunk about Vue.js framework.", source: "memory" as const },
@@ -132,13 +132,13 @@ describe("Batch ingest", () => {
     expect(ids.length).toBe(3);
 
     // All should be searchable
-    const results = executeRetrievalPipeline(db.db, "React components", config);
+    const results = await executeRetrievalPipeline(db.db, "React components", config);
     expect(results.length).toBeGreaterThan(0);
   });
 });
 
 describe("Elephant override", () => {
-  it("trauma memory always appears in results", () => {
+  it("trauma memory always appears in results", async () => {
     // Store normal memory
     ingestChunk(db.db, {
       sourcePath: "memory/normal.md",
@@ -154,7 +154,7 @@ describe("Elephant override", () => {
     });
 
     // Search for database topic
-    const results = executeRetrievalPipeline(db.db, "database production", config);
+    const results = await executeRetrievalPipeline(db.db, "database production", config);
     expect(results.length).toBeGreaterThan(0);
 
     // Trauma memory should be present with high score
@@ -166,26 +166,26 @@ describe("Elephant override", () => {
 });
 
 describe("Session vs Memory scope", () => {
-  it("session-scoped content returns source=sessions", () => {
+  it("session-scoped content returns source=sessions", async () => {
     ingestChunk(db.db, {
       sourcePath: "sessions/2024-01-15.json",
       content: "User discussed their preference for dark mode interfaces.",
       source: "sessions",
     });
 
-    const results = executeRetrievalPipeline(db.db, "dark mode preference", config);
+    const results = await executeRetrievalPipeline(db.db, "dark mode preference", config);
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].source).toBe("sessions");
   });
 
-  it("memory-scoped content returns source=memory", () => {
+  it("memory-scoped content returns source=memory", async () => {
     ingestChunk(db.db, {
       sourcePath: "memory/prefs.md",
       content: "Preferred IDE is VS Code with Vim keybindings.",
       source: "memory",
     });
 
-    const results = executeRetrievalPipeline(db.db, "VS Code Vim", config);
+    const results = await executeRetrievalPipeline(db.db, "VS Code Vim", config);
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].source).toBe("memory");
   });
@@ -239,13 +239,13 @@ describe("Fingerprint dedup", () => {
 });
 
 describe("Maintenance cycle", () => {
-  it("runs without errors on empty database", () => {
-    const report = runMaintenanceCycle(db.db);
+  it("runs without errors on empty database", async () => {
+    const report = await runMaintenanceCycle(db.db, testDir, DEFAULT_AEGIS_CONFIG);
     expect(report.stateTransitions).toBe(0);
     expect(report.ftsOptimized).toBe(true);
   });
 
-  it("expires TTL nodes", () => {
+  it("expires TTL nodes", async () => {
     // Insert a node with expired TTL
     const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     db.db.prepare(`
@@ -253,7 +253,7 @@ describe("Maintenance cycle", () => {
       VALUES ('ttl-expired', 'working_scratch', 'temporary data', 'active', ?, datetime('now'), datetime('now'))
     `).run(pastDate);
 
-    const report = runMaintenanceCycle(db.db);
+    const report = await runMaintenanceCycle(db.db, testDir, DEFAULT_AEGIS_CONFIG);
     expect(report.ttlExpired).toBe(1);
 
     // Node should be expired
@@ -265,14 +265,14 @@ describe("Maintenance cycle", () => {
 });
 
 describe("Citation format", () => {
-  it("citation includes memory type", () => {
+  it("citation includes memory type", async () => {
     ingestChunk(db.db, {
       sourcePath: "memory/facts.md",
       content: "The speed of light is approximately 299792458 meters per second.",
       source: "memory",
     });
 
-    const results = executeRetrievalPipeline(db.db, "speed of light", config);
+    const results = await executeRetrievalPipeline(db.db, "speed of light", config);
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].citation).toContain("[");
     expect(results[0].citation).toContain("]");
@@ -280,7 +280,7 @@ describe("Citation format", () => {
 });
 
 describe("Recall count tracking", () => {
-  it("increments recall_count on search hit", () => {
+  it("increments recall_count on search hit", async () => {
     const nodeId = ingestChunk(db.db, {
       sourcePath: "memory/recall.md",
       content: "Unique zaphodbeeblebrox content for recall tracking test.",
@@ -288,14 +288,14 @@ describe("Recall count tracking", () => {
     });
 
     // First search
-    executeRetrievalPipeline(db.db, "zaphodbeeblebrox", config);
+    await executeRetrievalPipeline(db.db, "zaphodbeeblebrox", config);
 
     const after1 = db.db.prepare("SELECT recall_count FROM memory_nodes WHERE id = ?").get(nodeId) as {
       recall_count: number;
     };
 
     // Second search
-    executeRetrievalPipeline(db.db, "zaphodbeeblebrox", config);
+    await executeRetrievalPipeline(db.db, "zaphodbeeblebrox", config);
 
     const after2 = db.db.prepare("SELECT recall_count FROM memory_nodes WHERE id = ?").get(nodeId) as {
       recall_count: number;
@@ -338,13 +338,13 @@ describe("Pipeline Stage 4 — Sea Lion inference", () => {
       enabledLayers: ["elephant", "orca", "sea-lion", "salmon", "dolphin"],
     };
 
-    const results = executeRetrievalPipeline(db.db, "SkyClaw project", configWithSeaLion);
+    const results = await executeRetrievalPipeline(db.db, "SkyClaw project", configWithSeaLion);
     expect(results.length).toBeGreaterThan(0);
   });
 });
 
 describe("Pipeline Stage 5 — Salmon dedup", () => {
-  it("deduplicates nodes with same normalized content in results", () => {
+  it("deduplicates nodes with same normalized content in results", async () => {
     // Manually insert nodes with same normalized_hash
     const now = new Date().toISOString();
     const normalizedHash = "test_dedup_normalized_hash_abc123";
@@ -383,7 +383,7 @@ describe("Pipeline Stage 5 — Salmon dedup", () => {
       enabledLayers: ["elephant", "orca", "salmon"],
     };
 
-    const results = executeRetrievalPipeline(db.db, "Aegis memory FTS5", configWithSalmon);
+    const results = await executeRetrievalPipeline(db.db, "Aegis memory FTS5", configWithSalmon);
 
     // Count how many results match our dup nodes
     const dupResults = results.filter((r) =>

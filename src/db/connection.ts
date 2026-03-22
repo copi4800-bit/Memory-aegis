@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { runMigrations } from "./migrate.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -52,6 +53,9 @@ export function openDatabase(dbPath: string): AegisDatabase {
   // Initialize schema (all CREATE IF NOT EXISTS — safe to re-run)
   const schema = fs.readFileSync(resolveSchemaPath(), "utf-8");
   db.exec(schema);
+
+  // Run migrations to bring schema up to latest version
+  runMigrations(db);
 
   return {
     db,

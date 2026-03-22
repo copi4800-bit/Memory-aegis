@@ -193,7 +193,7 @@ describe("listElephantMemories", () => {
 });
 
 describe("Elephant in full pipeline", () => {
-  it("trauma override always appears with score=1.0", () => {
+  it("trauma override always appears with score=1.0", async () => {
     ingestChunk(db.db, {
       sourcePath: "memory/normal.md",
       content: "Normal database configuration settings.",
@@ -207,7 +207,7 @@ describe("Elephant in full pipeline", () => {
       { subject: "database safety", overridePriority: 100 },
     );
 
-    const results = executeRetrievalPipeline(db.db, "database production", DEFAULT_AEGIS_CONFIG);
+    const results = await executeRetrievalPipeline(db.db, "database production", DEFAULT_AEGIS_CONFIG);
     expect(results.length).toBeGreaterThan(0);
 
     const traumaResult = results.find((r) => r.snippet.includes("NEVER delete"));

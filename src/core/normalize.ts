@@ -96,8 +96,8 @@ export function buildFtsQuery(raw: string): string | null {
   if (tokens.length >= 2) {
     const nearQuery = `NEAR(${quoted.join(" ")}, 10)`;
     const andQuery = quoted.join(" AND ");
-    const prefixQuery = prefixed.join(" AND ");
-    return `${nearQuery} OR ${andQuery} OR ${prefixQuery}`;
+    const prefixOrQuery = prefixed.join(" OR ");
+    return `${nearQuery} OR ${andQuery} OR ${prefixOrQuery}`;
   }
 
   // Single token: exact OR prefix

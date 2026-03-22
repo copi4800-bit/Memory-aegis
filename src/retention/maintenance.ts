@@ -10,6 +10,9 @@ import { nowISO } from "../core/id.js";
 import { Viper } from "../maintenance/viper.js";
 import { LeafcutterAnt } from "../maintenance/leafcutter.js";
 import { Axolotl } from "../maintenance/axolotl.js";
+import { MeerkatSentry } from "../cognitive/meerkat.js";
+import { ZebraFinch } from "../cognitive/zebra-finch.js";
+import { BowerbirdTaxonomist } from "../cognitive/bowerbird.js";
 
 export interface MaintenanceReport {
   stateTransitions: number;
@@ -20,6 +23,9 @@ export interface MaintenanceReport {
   viperShedSkin: boolean;
   leafcutterArchivedEvents: number;
   axolotlPrunedDerived: number;
+  meerkatContradictions: number;
+  zebraFinchSuperseded: number;
+  bowerbirdClassified: number;
 }
 
 /**
@@ -39,7 +45,36 @@ export async function runMaintenanceCycle(
     viperShedSkin: false,
     leafcutterArchivedEvents: 0,
     axolotlPrunedDerived: 0,
+    meerkatContradictions: 0,
+    zebraFinchSuperseded: 0,
+    bowerbirdClassified: 0,
   };
+
+  // -1. Bowerbird (Taxonomy Hardening - do it before Meerkat)
+  try {
+    const bowerbird = new BowerbirdTaxonomist(db);
+    report.bowerbirdClassified = bowerbird.classifyAllUnknownNodes();
+  } catch (err) {
+    console.error("Bowerbird classification failed:", err);
+  }
+
+  // 0. Meerkat Sentry (Contradiction Scanning)
+  try {
+    const meerkat = new MeerkatSentry(db);
+    const conflicts = meerkat.scan();
+    report.meerkatContradictions = conflicts.length;
+  } catch (err) {
+    console.error("Meerkat sentry scan failed:", err);
+  }
+
+  // 0.1 Zebra Finch (Semantic Consolidation / REM Sleep)
+  try {
+    const finch = new ZebraFinch(db);
+    const result = await finch.performRemSleep();
+    report.zebraFinchSuperseded = result.supersededCount;
+  } catch (err) {
+    console.error("Zebra Finch maintenance failed:", err);
+  }
 
   // 1. Viper Shedding (Rotation & Hard Caps)
   try {
