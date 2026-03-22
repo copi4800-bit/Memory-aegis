@@ -1,5 +1,7 @@
 # Memory Aegis v4 (Full Beast Architecture)
 
+**Produced by Hali12**
+
 **Version:** 4.0.0  
 **Framework:** OpenClaw Plugin (Memory Slot)  
 **Status:** Stable - System Verified

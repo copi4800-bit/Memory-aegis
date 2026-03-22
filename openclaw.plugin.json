@@ -1,7 +1,7 @@
 {
   "id": "memory-aegis-v4",
   "name": "Memory Aegis v4",
-  "description": "Cognitive memory engine showcasing a 22-Layer Full Beast Architecture",
+  "description": "Cognitive memory engine showcasing a 22-Layer Full Beast Architecture (Produced by Hali12)",
   "kind": "memory",
   "version": "4.0.0",
   "configSchema": {

@@ -1,12 +1,12 @@
 {
   "name": "memory-aegis-v4",
   "version": "4.0.0",
-  "description": "Memory Aegis v4 — Full Beast Autonomic Memory Engine for OpenClaw",
-  "author": "Bim Bim & The OpenClaw Team",
+  "description": "Memory Aegis v4 — Full Beast Autonomic Memory Engine (Produced by Hali12)",
+  "author": "Hali12",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/openclaw/memory-aegis-v4.git"
+    "url": "https://github.com/copi4800-bit/Memory-aegis.git"
   },
   "keywords": [
     "openclaw",
