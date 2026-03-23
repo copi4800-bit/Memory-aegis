@@ -1,7 +1,7 @@
 import type { MemorySearchResult } from "../retrieval/packet.js";
 
 /**
- * Chameleon (Tắc kè hoa) — Context Budgeting (Hardened v3.4)
+ * Chameleon (Tắc kè hoa) — Context Budgeting (v4.0)
  *
  * Hardening additions:
  * - Configurable zone ratios via ZonePolicy

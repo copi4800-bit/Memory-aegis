@@ -3,7 +3,7 @@ import { bm25RankToScore } from "../core/normalize.js";
 import { type FtsResult } from "./fts-search.js";
 
 /**
- * Meganeura Mode (Dragonfly V2) — 100% Local Semantic-lite Rescue (Hardened v3.2)
+ * Meganeura Mode (Dragonfly V2) — 100% Local Semantic-lite Rescue (v4.0)
  *
  * Chiến thuật:
  * 1. Multi-hop Synonym Expansion (Nội suy đa tầng)

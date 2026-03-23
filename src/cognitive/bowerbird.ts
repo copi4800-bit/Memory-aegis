@@ -8,7 +8,7 @@ import {
 } from "../core/models.js";
 
 /**
- * Bowerbird Layer — Taxonomy Classifier & Migrator (Hardened v3.1)
+ * Bowerbird Layer — Taxonomy Classifier & Migrator (v4.0)
  *
  * Phân loại memory nodes theo Generic Taxonomy v1 (frozen).
  * Hỗ trợ migrate từ nhãn cũ sang taxonomy mới.

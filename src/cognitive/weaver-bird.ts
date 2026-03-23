@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import { nowISO, newId } from "../core/id.js";
 
 /**
- * WeaverBird (Chim Dòng Dọc) — Hardened v3.3
+ * WeaverBird (Chim Dòng Dọc) — v4.0
  *
  * Nhiệm vụ: Xâu chuỗi các dòng sự kiện, tin nhắn sử dụng Tool của Agent
  * để dệt thành một Procedural Blueprint (Sách Hướng Dẫn).

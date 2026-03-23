@@ -1,5 +1,5 @@
 /**
- * Text normalization utilities for Memory Aegis v3.
+ * Text normalization utilities for Memory Aegis v4.
  * Used by Salmon fingerprinting and entity resolution.
  */
 
