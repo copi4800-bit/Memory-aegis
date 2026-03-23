@@ -4,6 +4,20 @@ import { computeFingerprints, FINGERPRINT_VERSION } from "./fingerprint.js";
 import { extractEntities, type ExtractedEntity } from "./entities.js";
 import type { MemoryType } from "./models.js";
 
+// --- Path Sanitization ---
+
+/**
+ * Normalize sourcePath to prevent traversal sequences from confusing classification.
+ * Does NOT perform file I/O — only normalizes for pattern matching.
+ */
+function sanitizeSourcePath(sourcePath: string): string {
+  return sourcePath
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter(segment => segment !== ".." && segment !== ".")
+    .join("/");
+}
+
 // --- File Type Inference ---
 
 interface IngestOptions {
@@ -109,8 +123,9 @@ function checkDedup(
  */
 export function ingestChunk(db: Database.Database, opts: IngestOptions): string {
   const now = nowISO();
-  const memoryType = inferMemoryType(opts.sourcePath, opts.source);
-  const scope = inferScope(opts.sourcePath, opts.source, opts.scope);
+  const cleanPath = sanitizeSourcePath(opts.sourcePath);
+  const memoryType = inferMemoryType(cleanPath, opts.source);
+  const scope = inferScope(cleanPath, opts.source, opts.scope);
 
   // Step 1: Fingerprint
   const fp = computeFingerprints(opts.content);

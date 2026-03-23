@@ -42,11 +42,8 @@ export async function createSnapshot(
   const fileName = `aegis-snapshot-${timestamp}.db.bak`;
   const backupPath = path.join(backupDir, fileName);
 
-  // Mở DB đích để backup
-  const backupDb = new Database(backupPath);
-
   try {
-    // Thực hiện online backup từ sourceDb sang backupDb
+    // Thực hiện online backup từ sourceDb sang backupPath
     await sourceDb.backup(backupPath);
 
     const stats = fs.statSync(backupPath);
@@ -67,7 +64,7 @@ export async function createSnapshot(
 
     return result;
   } finally {
-    backupDb.close();
+    // no-op: sourceDb.backup() manages its own destination connection
   }
 }
 
@@ -92,21 +89,21 @@ export function exportLogicalData(
     // Xuất nodes
     const nodes = db.prepare("SELECT * FROM memory_nodes").all() as any[];
     for (const node of nodes) {
-      fs.writeSync(fd, JSON.stringify({ type: "node", data: node }) + "\\n");
+      fs.writeSync(fd, JSON.stringify({ type: "node", data: node }) + "\n");
       nodeCount++;
     }
 
     // Xuất edges
     const edges = db.prepare("SELECT * FROM memory_edges").all() as any[];
     for (const edge of edges) {
-      fs.writeSync(fd, JSON.stringify({ type: "edge", data: edge }) + "\\n");
+      fs.writeSync(fd, JSON.stringify({ type: "edge", data: edge }) + "\n");
       edgeCount++;
     }
 
     // Xuất entities
     const entities = db.prepare("SELECT * FROM entities").all() as any[];
     for (const entity of entities) {
-      fs.writeSync(fd, JSON.stringify({ type: "entity", data: entity }) + "\\n");
+      fs.writeSync(fd, JSON.stringify({ type: "entity", data: entity }) + "\n");
     }
 
     return {

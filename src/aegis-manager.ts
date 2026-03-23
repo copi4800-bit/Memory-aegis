@@ -37,6 +37,22 @@ import { AegisDoctor, type DoctorReport } from "./maintenance/doctor.js";
 import { buildMemoryProfile, renderProfile, type MemoryProfile } from "./ux/profile.js";
 import { runOnboarding, type OnboardingResult } from "./ux/onboarding.js";
 
+function validateConfig(config: AegisConfig): void {
+  const checks: Array<[string, number | undefined, (v: number) => boolean]> = [
+    ["keepDaily", config.keepDaily, (v) => v >= 1 && v <= 365],
+    ["keepWeekly", config.keepWeekly, (v) => v >= 1 && v <= 52],
+    ["keepMonthly", config.keepMonthly, (v) => v >= 1 && v <= 120],
+    ["maxInteractionStatesPerSession", config.maxInteractionStatesPerSession, (v) => v >= 1 && v <= 10000],
+    ["maxScratchCaptureBytes", config.maxScratchCaptureBytes, (v) => v >= 1024 && v <= 100 * 1024 * 1024],
+    ["archiveAfterDays", config.archiveAfterDays, (v) => v >= 1 && v <= 3650],
+  ];
+  for (const [name, value, isValid] of checks) {
+    if (value !== undefined && !isValid(value)) {
+      throw new Error(`AegisConfig: "${name}" value ${value} is out of allowed range`);
+    }
+  }
+}
+
 const MANAGER_CACHE = new Map<string, AegisMemoryManager>();
 
 export class AegisMemoryManager {
@@ -63,6 +79,7 @@ export class AegisMemoryManager {
 
     const { preset, ...overrides } = config;
     const mergedConfig = resolveConfig(preset, overrides);
+    validateConfig(mergedConfig);
     const dbPath = resolveDbPath(workspaceDir);
     const aegisDb = openDatabase(dbPath);
 

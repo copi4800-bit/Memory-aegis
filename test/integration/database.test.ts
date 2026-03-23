@@ -62,7 +62,7 @@ describe("Database initialization", () => {
 
   it("has latest schema version", () => {
     const version = getSchemaVersion(testDb.db);
-    expect(version).toBe(6);
+    expect(version).toBe(7);
   });
 
   it("WAL mode is enabled", () => {

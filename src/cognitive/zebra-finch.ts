@@ -9,6 +9,7 @@
 import type Database from "better-sqlite3";
 import { newId, nowISO } from "../core/id.js";
 import { MeerkatSentry } from "./meerkat.js";
+import { normalizeVietnamese } from "../core/normalize-vi.js";
 
 export interface ConsolidationReport {
   supersededCount: number;
@@ -42,11 +43,108 @@ export class ZebraFinch {
       }
     }
 
-    // 2. Gom mảnh ngữ nghĩa (Subject Consolidation)
-    // (Trong phiên bản này chúng ta mới chỉ làm auto-supersede, 
-    // consolidation bằng LLM sẽ được cập nhật sau khi có bridge LLM)
+    // 2. Jaccard near-duplicate consolidation (no LLM needed — pure set math)
+    report.consolidatedCount = this.consolidateByJaccard();
 
     return report;
+  }
+
+  private extractTerms(text: string): Set<string> {
+    const STOPWORDS = new Set([
+      "và", "hoặc", "của", "với", "trong", "ngoài", "từ", "đến", "theo",
+      "bằng", "này", "kia", "đây", "đó", "rất", "quá", "hơn", "nhất",
+      "the", "and", "or", "but", "for", "with", "that", "this", "from",
+      "have", "has", "are", "was", "were", "been", "will", "would",
+      "could", "should", "may", "might", "can", "also", "just", "more",
+      "không", "có", "là", "một", "các", "những", "được", "khi", "nếu",
+      "then", "when", "into", "than", "they", "them", "their",
+    ]);
+    const terms = new Set<string>();
+    for (const w of text.toLowerCase().split(/[\s,.()\[\]{};:!?'"\/\\]+/)) {
+      if (w.length <= 3 || STOPWORDS.has(w)) continue;
+      terms.add(w);
+      const norm = normalizeVietnamese(w);
+      if (norm !== w) terms.add(norm); // add diacritic-free alias for synonym bridging
+    }
+    return terms;
+  }
+
+  private jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+    if (a.size === 0 && b.size === 0) return 1.0;
+    if (a.size === 0 || b.size === 0) return 0.0;
+    const intersection = [...a].filter(t => b.has(t)).length;
+    const union = new Set([...a, ...b]).size;
+    return intersection / union;
+  }
+
+  private consolidateByJaccard(): number {
+    const JACCARD_THRESHOLD = 0.6;
+    const now = nowISO();
+    let merged = 0;
+
+    // Get all subjects with 2+ active nodes
+    const subjects = this.db.prepare(`
+      SELECT canonical_subject
+      FROM memory_nodes
+      WHERE status = 'active'
+        AND canonical_subject IS NOT NULL
+        AND memory_state NOT IN ('crystallized', 'archived')
+      GROUP BY canonical_subject
+      HAVING COUNT(*) > 1
+    `).all() as Array<{ canonical_subject: string }>;
+
+    const getNodes = this.db.prepare(`
+      SELECT id, content, created_at
+      FROM memory_nodes
+      WHERE canonical_subject = ? AND status = 'active'
+        AND memory_state NOT IN ('crystallized', 'archived')
+      ORDER BY created_at DESC
+    `);
+
+    for (const { canonical_subject } of subjects) {
+      const nodes = getNodes.all(canonical_subject) as Array<{
+        id: string; content: string; created_at: string;
+      }>;
+
+      // Compare all pairs — supersede older if Jaccard >= threshold
+      const superseded = new Set<string>();
+
+      for (let i = 0; i < nodes.length; i++) {
+        if (superseded.has(nodes[i].id)) continue;
+        const termsI = this.extractTerms(nodes[i].content);
+
+        for (let j = i + 1; j < nodes.length; j++) {
+          if (superseded.has(nodes[j].id)) continue;
+          const termsJ = this.extractTerms(nodes[j].content);
+          const similarity = this.jaccardSimilarity(termsI, termsJ);
+
+          if (similarity >= JACCARD_THRESHOLD) {
+            // nodes[i] is newer (ORDER BY created_at DESC), supersede nodes[j]
+            this.db.transaction(() => {
+              this.db.prepare(
+                `UPDATE memory_nodes SET status = 'superseded', updated_at = ? WHERE id = ? AND status = 'active'`
+              ).run(now, nodes[j].id);
+
+              const edgeId = `edge_${newId().substring(0, 8)}`;
+              this.db.prepare(`
+                INSERT INTO memory_edges (id, src_node_id, dst_node_id, edge_type, weight, confidence, status, created_at, updated_at, extension_json)
+                VALUES (?, ?, ?, 'supersedes', ?, 1.0, 'active', ?, ?, ?)
+              `).run(edgeId, nodes[i].id, nodes[j].id, similarity, now, now,
+                JSON.stringify({ reason: "Jaccard near-duplicate", similarity, mechanism: "jaccard_consolidation" }));
+
+              this.db.prepare(
+                `INSERT INTO memory_events (id, event_type, node_id, payload_json, created_at) VALUES (?, 'jaccard_consolidated', ?, ?, ?)`
+              ).run(newId(), nodes[j].id, JSON.stringify({ superseded_by: nodes[i].id, similarity, subject: canonical_subject }), now);
+            })();
+
+            superseded.add(nodes[j].id);
+            merged++;
+          }
+        }
+      }
+    }
+
+    return merged;
   }
 
   /**

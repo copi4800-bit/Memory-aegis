@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import crypto from "node:crypto";
 import type { MemoryNode } from "../core/models.js";
+import { normalizeVietnamese } from "../core/normalize-vi.js";
 
 /**
  * Meerkat Layer — Contradiction Sentry
@@ -55,7 +56,9 @@ export class MeerkatSentry {
               nodeB: nodes[j].id,
               reason
             });
-            this.recordConflict(nodes[i].id, nodes[j].id, sub.canonical_subject, conflict);
+            if (conflict.includes("[HIGH]") || conflict.includes("[MEDIUM]")) {
+              this.recordConflict(nodes[i].id, nodes[j].id, sub.canonical_subject, conflict);
+            }
           }
         }
       }
@@ -64,10 +67,90 @@ export class MeerkatSentry {
     return contradictions;
   }
 
+  private extractMeaningfulTerms(text: string): Set<string> {
+    const STOPWORDS = new Set([
+      "và", "hoặc", "của", "với", "trong", "ngoài", "từ", "đến", "theo",
+      "bằng", "này", "kia", "đây", "đó", "rất", "quá", "hơn", "nhất",
+      "the", "and", "or", "but", "for", "with", "that", "this", "from",
+      "have", "has", "are", "was", "were", "been", "will", "would",
+      "could", "should", "may", "might", "can", "also", "just", "more",
+      "không", "có", "là", "một", "các", "những", "được", "khi", "nếu",
+      "then", "when", "into", "than", "they", "them", "their",
+    ]);
+
+    const terms = new Set<string>();
+    for (const w of text.toLowerCase().split(/[\s,.()\[\]{};:!?'"\/\\]+/)) {
+      if (w.length <= 3 || STOPWORDS.has(w)) continue;
+      terms.add(w);
+      const norm = normalizeVietnamese(w);
+      if (norm !== w) terms.add(norm); // add diacritic-free alias for synonym bridging
+    }
+    return terms;
+  }
+
+  /**
+   * Returns true if any keyword appears within windowSize words of any shared term.
+   */
+  private isNegationNearTerm(
+    text: string,
+    keywords: string[],
+    sharedTerms: string[],
+    windowSize = 8,
+  ): boolean {
+    const words = text.toLowerCase().split(/[\s,.()\[\]{};:!?'"\/\\]+/).filter(Boolean);
+    for (let i = 0; i < words.length; i++) {
+      if (keywords.some(k => words[i].includes(k))) {
+        const start = Math.max(0, i - windowSize);
+        const end = Math.min(words.length - 1, i + windowSize);
+        const window = words.slice(start, end + 1);
+        if (sharedTerms.some(t => window.some(w => w.includes(t)))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Compute IDF-weighted score for a list of shared terms.
+   * IDF(term) = log(totalNodes / (docsWithTerm + 1))
+   * Rare terms score higher than common ones.
+   */
+  private computeIdfScore(sharedTerms: string[]): number {
+    if (sharedTerms.length === 0) return 0;
+
+    const totalRow = this.db.prepare(
+      `SELECT COUNT(*) as total FROM memory_nodes WHERE status = 'active'`
+    ).get() as { total: number };
+    const totalNodes = Math.max(1, totalRow.total);
+
+    let score = 0;
+    for (const term of sharedTerms) {
+      const freqRow = this.db.prepare(
+        `SELECT COUNT(*) as freq FROM memory_nodes WHERE status = 'active' AND content LIKE ?`
+      ).get(`%${term}%`) as { freq: number };
+      const freq = Math.max(0, freqRow.freq);
+      const idf = Math.log(totalNodes / (freq + 1));
+      score += Math.max(0, idf); // IDF can be negative if term appears in most nodes — clamp to 0
+    }
+
+    return score;
+  }
+
   /**
    * Heuristic conflict detection
    */
   private detectConflict(nodeA: MemoryNode, nodeB: MemoryNode): string | null {
+    // Shared term gate: nodes must share vocabulary to potentially contradict
+    const termsA = this.extractMeaningfulTerms(nodeA.content);
+    const termsB = this.extractMeaningfulTerms(nodeB.content);
+    const sharedTerms = [...termsA].filter(t => termsB.has(t));
+    if (sharedTerms.length === 0) return null; // Fast exit: no overlap at all
+
+    const IDF_THRESHOLD = 1.5; // ~2 moderately rare terms, or 1 very rare term
+    const idfScore = this.computeIdfScore(sharedTerms);
+    if (idfScore < IDF_THRESHOLD) return null;
+
     const contentA = nodeA.content.toLowerCase();
     const contentB = nodeB.content.toLowerCase();
 
@@ -82,20 +165,29 @@ export class MeerkatSentry {
     const aHasAff = affirmations.some(p => contentA.includes(p));
 
     if ((aHasNeg && bHasAff) || (bHasNeg && aHasAff)) {
-      // 2. Logic thời gian: Nếu một node mới hơn node kia đáng kể (> 24h)
+      // Proximity check: negation near a shared term = high confidence
+      const proximityA = this.isNegationNearTerm(contentA, negations, sharedTerms);
+      const proximityB = this.isNegationNearTerm(contentB, negations, sharedTerms);
+      const highConfidence = proximityA || proximityB;
+
+      // Skip if no proximity match AND not enough shared terms
+      if (!highConfidence && sharedTerms.length < 3) return null;
+
+      const confidenceTag = highConfidence ? "[HIGH]" : "[MEDIUM]";
+
       const dateA = new Date(nodeA.created_at).getTime();
       const dateB = new Date(nodeB.created_at).getTime();
       const diffHours = Math.abs(dateA - dateB) / (1000 * 60 * 60);
 
       if (diffHours > 24) {
         const newer = dateA > dateB ? "A" : "B";
-        return `Có thể là bản cập nhật (Superseded candidate): Node ${newer} mới hơn ${diffHours.toFixed(1)} giờ.`;
+        return `${confidenceTag} Superseded candidate: Node ${newer} mới hơn ${diffHours.toFixed(1)} giờ.`;
       }
 
       if (nodeA.episode_id !== nodeB.episode_id) {
-        return `Xung đột logic giữa Episode ${nodeA.episode_id} và ${nodeB.episode_id}`;
+        return `${confidenceTag} Xung đột logic giữa Episode ${nodeA.episode_id} và ${nodeB.episode_id}`;
       }
-      return "Xung đột logic trực tiếp";
+      return `${confidenceTag} Xung đột logic trực tiếp`;
     }
 
     // 3. Kiểm tra mâu thuẫn tần suất

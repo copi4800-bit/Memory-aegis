@@ -8,7 +8,6 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
-import { runMigrations } from "../db/migrate.js";
 import { closeAllManagers } from "../aegis-manager.js";
 
 export interface RestoreResult {

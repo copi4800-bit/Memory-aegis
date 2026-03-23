@@ -13,8 +13,10 @@ import { Axolotl } from "../maintenance/axolotl.js";
 import { MeerkatSentry } from "../cognitive/meerkat.js";
 import { ZebraFinch } from "../cognitive/zebra-finch.js";
 import { BowerbirdTaxonomist } from "../cognitive/bowerbird.js";
+import crypto from "node:crypto";
 
 export interface MaintenanceReport {
+  runId: string;
   stateTransitions: number;
   archived: number;
   ttlExpired: number;
@@ -26,6 +28,7 @@ export interface MaintenanceReport {
   meerkatContradictions: number;
   zebraFinchSuperseded: number;
   bowerbirdClassified: number;
+  stepErrors: Record<string, string>;
 }
 
 /**
@@ -36,7 +39,11 @@ export async function runMaintenanceCycle(
   workspaceDir: string,
   config: AegisConfig
 ): Promise<MaintenanceReport> {
+  const runId = crypto.randomUUID();
+  const startedAt = nowISO();
+
   const report: MaintenanceReport = {
+    runId,
     stateTransitions: 0,
     archived: 0,
     ttlExpired: 0,
@@ -48,7 +55,12 @@ export async function runMaintenanceCycle(
     meerkatContradictions: 0,
     zebraFinchSuperseded: 0,
     bowerbirdClassified: 0,
+    stepErrors: {},
   };
+
+  db.prepare(
+    "INSERT INTO memory_events (id, event_type, payload_json, created_at) VALUES (?, 'maintenance_started', ?, ?)"
+  ).run(runId, JSON.stringify({ runId, startedAt }), startedAt);
 
   // -1. Bowerbird (Taxonomy Hardening - do it before Meerkat)
   try {
@@ -56,6 +68,7 @@ export async function runMaintenanceCycle(
     report.bowerbirdClassified = bowerbird.classifyAllUnknownNodes();
   } catch (err) {
     console.error("Bowerbird classification failed:", err);
+    report.stepErrors["bowerbird"] = err instanceof Error ? err.message : String(err);
   }
 
   // 0. Meerkat Sentry (Contradiction Scanning)
@@ -65,6 +78,7 @@ export async function runMaintenanceCycle(
     report.meerkatContradictions = conflicts.length;
   } catch (err) {
     console.error("Meerkat sentry scan failed:", err);
+    report.stepErrors["meerkat"] = err instanceof Error ? err.message : String(err);
   }
 
   // 0.1 Zebra Finch (Semantic Consolidation / REM Sleep)
@@ -74,6 +88,7 @@ export async function runMaintenanceCycle(
     report.zebraFinchSuperseded = result.supersededCount;
   } catch (err) {
     console.error("Zebra Finch maintenance failed:", err);
+    report.stepErrors["zebraFinch"] = err instanceof Error ? err.message : String(err);
   }
 
   // 1. Viper Shedding (Rotation & Hard Caps)
@@ -83,6 +98,7 @@ export async function runMaintenanceCycle(
     report.viperShedSkin = true;
   } catch (err) {
     console.error("Viper maintenance failed:", err);
+    report.stepErrors["viper"] = err instanceof Error ? err.message : String(err);
   }
 
   // 2. Leafcutter Ant (Cold Storage Archiving)
@@ -92,6 +108,7 @@ export async function runMaintenanceCycle(
     report.leafcutterArchivedEvents = result.archivedEvents;
   } catch (err) {
     console.error("Leafcutter maintenance failed:", err);
+    report.stepErrors["leafcutter"] = err instanceof Error ? err.message : String(err);
   }
 
   // 3. Axolotl Pruning (Derived Data Cleanup)
@@ -100,6 +117,7 @@ export async function runMaintenanceCycle(
     report.axolotlPrunedDerived = await axolotl.pruneDerivedData();
   } catch (err) {
     console.error("Axolotl maintenance failed:", err);
+    report.stepErrors["axolotl"] = err instanceof Error ? err.message : String(err);
   }
 
   // 4. State transitions (volatile → stable → crystallized, suppress decayed)
@@ -139,9 +157,31 @@ export async function runMaintenanceCycle(
   try {
     db.exec("INSERT INTO memory_nodes_fts(memory_nodes_fts) VALUES('optimize')");
     report.ftsOptimized = true;
-  } catch {
+  } catch (err) {
     report.ftsOptimized = false;
+    report.stepErrors["ftsOptimize"] = err instanceof Error ? err.message : String(err);
+    // Emit audit event — FTS index corruption is not silent
+    try {
+      db.prepare(
+        "INSERT INTO memory_events (id, event_type, payload_json, created_at) VALUES (?, 'fts_optimize_failed', ?, ?)"
+      ).run(
+        crypto.randomUUID(),
+        JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+        nowISO()
+      );
+    } catch { /* suppress secondary error to preserve primary */ }
   }
+
+  const completedAt = nowISO();
+  const hasErrors = Object.keys(report.stepErrors).length > 0;
+  db.prepare(
+    "INSERT INTO memory_events (id, event_type, payload_json, created_at) VALUES (?, ?, ?, ?)"
+  ).run(
+    crypto.randomUUID(),
+    hasErrors ? "maintenance_failed" : "maintenance_completed",
+    JSON.stringify({ runId, completedAt, stepErrors: report.stepErrors, stateTransitions: report.stateTransitions }),
+    completedAt
+  );
 
   return report;
 }

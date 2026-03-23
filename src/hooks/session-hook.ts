@@ -26,7 +26,7 @@ export function createSessionHooks(getManager: () => AegisMemoryManager | null) 
       }
 
       // Run maintenance on session end
-      manager.runMaintenance();
+      void manager.runMaintenance();
     },
   };
 }

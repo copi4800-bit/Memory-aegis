@@ -38,6 +38,15 @@ describe("E2E Pipeline: Maintenance-Focused", () => {
       VALUES (?, ?, ?, ?, ?, 'active', 0.8, ?, ?, null)
     `);
 
+    // Background corpus nodes so IDF gate works (rare terms need N > 3 unrelated docs)
+    const now = new Date().toISOString();
+    insertNode.run("bg_01", "semantic_fact", "Authentication middleware validates JWT tokens before each request.", "auth.middleware", "workspace", now, now);
+    insertNode.run("bg_02", "semantic_fact", "Database connection pool size should be tuned for production load.", "database.pool", "workspace", now, now);
+    insertNode.run("bg_03", "semantic_fact", "React components must be wrapped in error boundaries.", "frontend.react", "workspace", now, now);
+    insertNode.run("bg_04", "semantic_fact", "All API endpoints require rate limiting configuration.", "api.ratelimit", "workspace", now, now);
+    insertNode.run("bg_05", "semantic_fact", "Deployment pipeline runs integration tests before merge.", "ci.pipeline", "workspace", now, now);
+    insertNode.run("bg_06", "semantic_fact", "Log rotation keeps only last seven days of application logs.", "logging.rotation", "workspace", now, now);
+
     insertNode.run(
       "old_port_node", "semantic_fact",
       "Port mặc định của project bắt buộc là 3000.",

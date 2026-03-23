@@ -171,11 +171,13 @@ export class BowerbirdTaxonomist {
       { pattern: /(?:bước \d|step \d|cách làm|hướng dẫn|workflow|quy trình|how to|procedure|SOP|checklist)/gi, category: "workflow.procedure", base: 0.7 },
       { pattern: /(?:quyết định|đã chốt|decided|trade-?off|lý do chọn|reasoning|we chose|went with)/gi, category: "workflow.decision", base: 0.7 },
       // Technical
-      { pattern: /(?:deploy|ci\/cd|docker|k8s|kubernetes|server|nginx|database|infra|migration|schema|sqlite)/gi, category: "technical.infra", base: 0.7 },
-      { pattern: /(?:git\s|terminal|bash|ssh|apt|npm run|yarn |vitest|compiler|cli|command line)/gi, category: "technical.tooling", base: 0.7 },
-      { pattern: /(?:typescript|javascript|python|react|next\.?js|node\.?js|rust|golang|html|css|tailwind)/gi, category: "technical.stack", base: 0.7 },
-      { pattern: /(?:architecture|pattern|microservice|design pattern|algorithm|thuật toán|logic|module)/gi, category: "technical.logic", base: 0.65 },
-      { pattern: /(?:function |const |let |class |interface |import |export |=>|def |async fn)/gi, category: "technical.code", base: 0.6 },
+      { pattern: /(?:deploy|ci\/cd|docker|k8s|kubernetes|server|nginx|network|proxy|port\s\d+)/gi, category: "technical.infra", base: 0.7 },
+      { pattern: /(?:database|db\s|schema|sql|migration|sqlite|query|table\b|index\b|foreign\skey|primary\skey|prisma|typeorm|create\stable|alter\stable|insert\sinto|select\s.*from)/gi, category: "technical.infra", base: 0.8 },
+      { pattern: /(?:git\s|terminal|bash|ssh|apt|npm\s|yarn\s|pnpm|vitest|jest|playwright|compiler|cli|command line|vsc)/gi, category: "technical.tooling", base: 0.7 },
+      { pattern: /(?:typescript|javascript|python|react|next\.?js|node\.?js|rust|golang|html|css|tailwind|vue|svelte|angular)/gi, category: "technical.stack", base: 0.85 },
+      { pattern: /(?:architecture|pattern|microservice|design pattern|algorithm|thuật toán|logic|module|implementation|system design)/gi, category: "technical.logic", base: 0.65 },
+      { pattern: /(?:function |const |let |var |class |interface |type\s|import |export |=>|def |async\s|await |return\s|if\s\(|else\s\{)/gi, category: "technical.code", base: 0.6 },
+
       // Context
       { pattern: /(?:project|dự án|timeline|deadline|stakeholder|sprint|milestone|release)/gi, category: "context.project", base: 0.7 },
       // Knowledge

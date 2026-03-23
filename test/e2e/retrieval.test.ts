@@ -20,7 +20,6 @@ describe("E2E Pipeline: Retrieval-Focused", () => {
 
     const db = manager.getDb();
     // Clear out any old data from filesystem persistence
-    db.prepare("DELETE FROM memory_nodes_vectors").run();
     db.prepare("DELETE FROM memory_nodes").run();
     db.prepare("DELETE FROM episodes").run();
   });

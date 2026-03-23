@@ -7,6 +7,7 @@ import type { MemoryNode, MemoryState } from "../core/models.js";
 import { CONSTANTS } from "../core/models.js";
 import { computeRetention } from "../retrieval/reranker.js";
 import { nowISO, daysBetween } from "../core/id.js";
+import crypto from "node:crypto";
 
 interface StateTransition {
   newState: MemoryState;
@@ -76,10 +77,17 @@ export function evaluateStateTransition(
 export function runStateTransitions(db: Database.Database): number {
   const now = nowISO();
   let changed = 0;
+  const BATCH_SIZE = 500;
 
-  const nodes = db.prepare(`
-    SELECT * FROM memory_nodes WHERE status = 'active' AND memory_state != 'archived'
-  `).all() as MemoryNode[];
+  const selectBatch = db.prepare(`
+    SELECT id, memory_state, memory_type, importance, salience, override_priority,
+           recall_count, frequency_count, first_seen_at, last_seen_at, last_access_at,
+           created_at, base_decay_rate, interference_score, stability_score
+    FROM memory_nodes
+    WHERE status = 'active' AND memory_state != 'archived'
+    ORDER BY id
+    LIMIT ${BATCH_SIZE} OFFSET ?
+  `);
 
   const updateState = db.prepare(`
     UPDATE memory_nodes
@@ -92,24 +100,33 @@ export function runStateTransitions(db: Database.Database): number {
     VALUES (?, 'state_transition', ?, ?, ?)
   `);
 
-  const txn = db.transaction(() => {
-    for (const node of nodes) {
-      const retention = computeRetention(node, now);
-      const transition = evaluateStateTransition(node, retention);
+  let offset = 0;
+  let batch: MemoryNode[] = [];
 
-      if (transition) {
-        updateState.run(transition.newState, now, transition.newState, now, node.id);
-        insertEvent.run(
-          crypto.randomUUID(), node.id,
-          JSON.stringify({ from: node.memory_state, to: transition.newState, reason: transition.reason }),
-          now,
-        );
-        changed++;
+  do {
+    batch = selectBatch.all(offset) as MemoryNode[];
+
+    const txn = db.transaction(() => {
+      for (const node of batch) {
+        const retention = computeRetention(node, now);
+        const transition = evaluateStateTransition(node, retention);
+
+        if (transition) {
+          updateState.run(transition.newState, now, transition.newState, now, node.id);
+          insertEvent.run(
+            crypto.randomUUID(), node.id,
+            JSON.stringify({ from: node.memory_state, to: transition.newState, reason: transition.reason }),
+            now,
+          );
+          changed++;
+        }
       }
-    }
-  });
+    });
 
-  txn();
+    txn();
+    offset += BATCH_SIZE;
+  } while (batch.length === BATCH_SIZE);
+
   return changed;
 }
 

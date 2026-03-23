@@ -1,8 +1,23 @@
 import type Database from "better-sqlite3";
+import path from "node:path";
+
+interface SchemaVersionRow {
+  version: number | null;
+}
+
+interface BuiltinChunkRow {
+  id: string;
+  path: string | null;
+  start_line: number | null;
+  end_line: number | null;
+  text: string;
+  source: string | null;
+  updated_at: string | null;
+}
 
 export function getSchemaVersion(db: Database.Database): number {
   try {
-    const row = db.prepare("SELECT MAX(version) as version FROM schema_version").get() as any;
+    const row = db.prepare("SELECT MAX(version) as version FROM schema_version").get() as SchemaVersionRow | undefined;
     return row?.version ?? 0;
   } catch { return 0; }
 }
@@ -143,6 +158,26 @@ export function runMigrations(db: Database.Database): void {
         `);
       },
     },
+    {
+      version: 7,
+      description: "Axolotl — rebuild_jobs audit table",
+      up: (db) => {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS rebuild_jobs (
+            id TEXT PRIMARY KEY,
+            job_type TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            target_scope TEXT,
+            metrics_json TEXT,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            error_text TEXT
+          );
+          CREATE INDEX IF NOT EXISTS idx_rebuild_jobs_type ON rebuild_jobs(job_type);
+          CREATE INDEX IF NOT EXISTS idx_rebuild_jobs_status ON rebuild_jobs(status);
+        `);
+      },
+    },
   ];
 
   db.exec("PRAGMA foreign_keys = OFF;");
@@ -160,13 +195,22 @@ export function runMigrations(db: Database.Database): void {
   }
 }
 
-export function migrateFromBuiltin(aegisDb: Database.Database, builtinDbPath: string): number {
+function validateDbPath(dbPath: string, workspaceDir: string): void {
+  const resolved = path.resolve(dbPath);
+  const resolvedWorkspace = path.resolve(workspaceDir);
+  if (!resolved.startsWith(resolvedWorkspace + path.sep) && resolved !== resolvedWorkspace) {
+    throw new Error(`Invalid database path: "${dbPath}" is outside the workspace directory`);
+  }
+}
+
+export function migrateFromBuiltin(aegisDb: Database.Database, builtinDbPath: string, workspaceDir: string): number {
+  validateDbPath(builtinDbPath, workspaceDir);
   aegisDb.exec(`ATTACH DATABASE '${builtinDbPath}' AS builtin`);
   let count = 0;
   try {
     const hasChunks = aegisDb.prepare("SELECT name FROM builtin.sqlite_master WHERE type='table' AND name='chunks'").get();
     if (!hasChunks) return 0;
-    const chunks = aegisDb.prepare("SELECT id, path, start_line, end_line, text, source, updated_at FROM builtin.chunks WHERE text IS NOT NULL AND length(text) > 0").all() as any[];
+    const chunks = aegisDb.prepare("SELECT id, path, start_line, end_line, text, source, updated_at FROM builtin.chunks WHERE text IS NOT NULL AND length(text) > 0").all() as BuiltinChunkRow[];
     const now = new Date().toISOString();
     const insertNode = aegisDb.prepare("INSERT OR IGNORE INTO memory_nodes (id, memory_type, content, canonical_subject, scope, status, importance, salience, memory_state, created_at, updated_at, first_seen_at, source_path, source_start_line, source_end_line) VALUES (?, 'semantic_fact', ?, NULL, ?, 'active', 0.3, 0.3, 'stable', ?, ?, ?, ?, ?, ?)");
     const migrate = aegisDb.transaction(() => {
