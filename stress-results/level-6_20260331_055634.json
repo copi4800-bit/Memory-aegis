@@ -1,0 +1,42 @@
+{
+  "level": "level-6",
+  "metrics": {
+    "variants_tested": 4,
+    "repair_success_rate": 0.75
+  },
+  "details": [
+    {
+      "variant": 0,
+      "boot_ok": true,
+      "store_ok": false,
+      "search_ok": false,
+      "repair_error": "table memories_fts has no column named summary",
+      "startup_latency_ms": 8.094210992567241
+    },
+    {
+      "variant": 1,
+      "boot_ok": true,
+      "store_ok": true,
+      "search_ok": true,
+      "repair_error": null,
+      "startup_latency_ms": 11.600886995438486
+    },
+    {
+      "variant": 2,
+      "boot_ok": true,
+      "store_ok": true,
+      "search_ok": true,
+      "repair_error": null,
+      "startup_latency_ms": 9.904908016324043
+    },
+    {
+      "variant": 3,
+      "boot_ok": true,
+      "store_ok": true,
+      "search_ok": true,
+      "repair_error": null,
+      "startup_latency_ms": 10.693397984141484
+    }
+  ],
+  "timestamp": "20260331_055634"
+}

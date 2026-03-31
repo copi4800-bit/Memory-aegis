@@ -1,0 +1,33 @@
+# Implementation Plan - Aegis v8 UX Integration Guide
+
+This plan outlines the creation of a comprehensive technical guide for integrating the strategic and functional UX requirements from `5.md` and `6.md` into the Aegis v8 mathematical core.
+
+## User Review Required
+
+> [!IMPORTANT]
+> This plan focuses on creating the **Documentation/Guide** first as requested. Actual code implementation will follow once the guide is reviewed.
+
+- **Scope**: The guide will cover the mapping from `v8_dynamics.py` (Math) to `5.md` (Data Contract) and `6.md` (UI Surfaces).
+- **Format**: A single, high-fidelity `.md` file with code snippets and architectural diagrams.
+
+## Proposed Steps
+
+### 1. Architectural Mapping
+- Define the "Translator" layer between `Search Result` and the `Aegis Surface`.
+- Map v8 `signals` (Trust, Belief, Readiness) to the canonical schema defined in `5.md`.
+
+### 2. Surface Integration Logic
+- **Why This Result**: Define how to generate `human_reason` from `v8_dynamics.dynamic_reason_tags`.
+- **Memory Signals**: Define the banding logic for scores (e.g., `trust_score` -> `trust_level`).
+- **Conflict Prompt**: Define the trigger logic using the `worth_score` formula from `5.md`.
+
+### 3. Documentation Creation
+- Create `v8_ux_integration_guide.md` with:
+    - Code examples for a new `ux_translator.py`.
+    - Integration points in `surface.py` and `mcp/server.py`.
+    - Verification checklist for "Fidelity" and "Stickiness".
+
+## Open Questions
+
+- [ ] Should I include a section on how to handle the "Respectful (Sếp/Em)" tone in the machine-generated reasons?
+- [ ] Do you want specific TypeScript/Frontend examples or focus purely on the Python/Backend side?

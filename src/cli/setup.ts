@@ -1,15 +1,53 @@
 #!/usr/bin/env node
 /**
- * Aegis v4 Quick Setup — Beginner-friendly onboarding CLI.
+ * Aegis v8 Quick Setup — Python-first onboarding CLI.
  */
 
-import { AegisMemoryManager } from "../aegis-manager.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import path from "node:path";
-import os from "node:os";
+import fs from "node:fs";
+
+const execFileAsync = promisify(execFile);
+
+function resolveRepoRoot(): string {
+  const here = path.dirname(new URL(import.meta.url).pathname);
+  const candidates = [
+    path.resolve(here, "../.."),
+    path.resolve(here, "../../.."),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(path.join(candidate, "aegis_py", "mcp", "server.py"))) {
+      return candidate;
+    }
+  }
+  throw new Error("Unable to locate the Aegis repository root.");
+}
+
+function resolvePythonExecutable(repoRoot: string): string {
+  const configured = process.env.AEGIS_PYTHON_BIN;
+  const candidates = [
+    configured,
+    path.join(repoRoot, ".venv", "bin", "python"),
+    "python3",
+    "python",
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (candidate.includes(path.sep)) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+      continue;
+    }
+    return candidate;
+  }
+  throw new Error("No Python executable available for Aegis setup.");
+}
 
 async function main() {
   console.log("================================================");
-  console.log("   Welcome to Memory Aegis v4 — Quick Setup   ");
+  console.log("   Welcome to Memory Aegis v8 — Quick Setup   ");
   console.log("================================================");
   console.log("");
 
@@ -17,28 +55,33 @@ async function main() {
   console.log(`- Workspace detected: ${workspaceDir}`);
 
   try {
-    console.log("- Initializing Aegis Manager...");
-    const manager = await AegisMemoryManager.create({
-      agentId: "aegis-cli-setup",
-      workspaceDir,
-      config: { preset: "balanced" }
-    });
+    const repoRoot = resolveRepoRoot();
+    const pythonBin = resolvePythonExecutable(repoRoot);
+    const dbPath = process.env.AEGIS_DB_PATH ?? path.join(workspaceDir, ".aegis_py", "memory_aegis_py.db");
+    const env = {
+      ...process.env,
+      PYTHONPATH: process.env.PYTHONPATH
+        ? `${repoRoot}:${process.env.PYTHONPATH}`
+        : repoRoot,
+      AEGIS_DB_PATH: dbPath,
+    };
 
-    console.log("- Running Guided Onboarding...");
-    const result = await manager.runOnboarding("balanced");
+    console.log("- Running Python onboarding checks...");
+    const { stdout } = await execFileAsync(
+      pythonBin,
+      ["-m", "aegis_py.cli", "--db-path", dbPath, "onboarding", "--workspace-dir", workspaceDir],
+      {
+      cwd: repoRoot,
+      env,
+      maxBuffer: 1024 * 1024,
+      },
+    );
 
     console.log("");
-    console.log(result.summary);
+    process.stdout.write(stdout.trimEnd());
     console.log("");
-
-    if (result.allPassed) {
-      console.log("Aegis v4 is now fully automated and active.");
-      console.log("You can start chatting, and Aegis will manage your memories behind the scenes.");
-    } else {
-      console.log("Setup completed with some warnings. Please review the summary above.");
-    }
-
-    await manager.close();
+    console.log("");
+    console.log("Aegis Python onboarding finished.");
   } catch (err) {
     console.error("Critical error during setup:", err);
     process.exit(1);

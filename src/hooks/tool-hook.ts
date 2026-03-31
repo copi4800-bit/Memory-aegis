@@ -1,30 +1,13 @@
 /**
- * Tool call hooks for Chimpanzee learning.
+ * Legacy compatibility stub for the retired TypeScript tool-hook path.
+ *
+ * The production tool-routing path now lives in the root OpenClaw plugin
+ * bootstrap and routes behavior into `aegis_py`.
  */
 
-import type { AegisMemoryManager } from "../aegis-manager.js";
-import { recordToolSuccess, recordToolFailure } from "../cognitive/chimpanzee.js";
+const LEGACY_TOOL_HOOK_ERROR =
+  "TypeScript tool hooks have been retired. Use the root plugin bootstrap and Python-owned surfaces in aegis_py instead.";
 
-export function createToolHooks(getManager: () => AegisMemoryManager | null) {
-  return {
-    async afterToolCall(event: {
-      toolName: string;
-      params: unknown;
-      result: unknown;
-      success: boolean;
-      error?: string;
-      sessionKey?: string;
-    }): Promise<void> {
-      const manager = getManager();
-      if (!manager || !manager.layerEnabled("chimpanzee")) return;
-
-      const db = manager.getDb();
-
-      if (event.success) {
-        recordToolSuccess(db, event.toolName, event.params, event.result, event.sessionKey);
-      } else {
-        recordToolFailure(db, event.toolName, event.params, event.error ?? "unknown error", event.sessionKey);
-      }
-    },
-  };
+export function createToolHooks(): never {
+  throw new Error(LEGACY_TOOL_HOOK_ERROR);
 }

@@ -1,6 +1,6 @@
 {
-  "name": "memory-aegis-v4",
-  "version": "4.0.0",
+  "name": "memory-aegis-v8",
+  "version": "8.0.0",
   "description": "Local-first cognitive memory engine for OpenClaw — smart recall, automatic maintenance, and conflict detection.",
   "author": "Hali12",
   "license": "MIT",
@@ -21,7 +21,7 @@
   ],
   "type": "module",
   "bin": {
-    "aegis-setup": "./dist/cli/setup.js"
+    "aegis-setup": "./bin/aegis-setup"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -33,18 +33,28 @@
   },
   "files": [
     "dist",
+    "aegis_py",
+    "bin",
     "openclaw.plugin.json",
     "package.json",
     "README.md",
-    "src"
+    "requirements.txt",
+    "scripts/demo_first_memory.py",
+    "scripts/demo_integration_boundary.py",
+    "scripts/demo_grounded_recall.py",
+    "scripts/release-python-package.sh"
   ],
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "prepare": "npm run build",
-    "test": "vitest run",
+    "test": "npm run test:python && npm run test:bootstrap",
+    "test:python": "PYTHONPATH=. .venv/bin/python -m pytest -q tests",
+    "test:bootstrap": "vitest run test/integration/python-adapter-plugin.test.ts",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
-    "setup": "npm run build && node ./dist/cli/setup.js"
+    "validate:python": "PYTHONPATH=. .venv/bin/python -m pytest -q tests",
+    "package:python": "./scripts/release-python-package.sh",
+    "setup": "python3 ./bin/aegis-setup"
   },
   "dependencies": {
     "better-sqlite3": "^11.0.0"

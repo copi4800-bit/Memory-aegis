@@ -1,0 +1,12 @@
+{
+  "level": "level-5",
+  "metrics": {
+    "hygiene_duration_s": 28.568885044020135,
+    "db_size_before_kb": 0.0,
+    "db_size_after_kb": 0.0,
+    "active_before": 24000,
+    "active_after": 10090,
+    "recall_at_5_after": 0.0
+  },
+  "timestamp": "20260331_062001"
+}

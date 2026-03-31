@@ -1,14 +1,49 @@
-import fsp from "node:fs/promises";
-import path from "node:path";
 import type { OpenClawPluginApi, OpenClawPluginToolContext } from "openclaw/plugin-sdk/memory-core";
-import { AegisMemoryManager, closeAllManagers } from "./src/aegis-manager.js";
-import type { CognitiveLayers } from "./src/core/models.js";
-import { AegisRouter } from "./src/retrieval/router.js";
-import { WeaverBird } from "./src/cognitive/weaver-bird.js";
-import type { MemorySearchResult } from "./src/retrieval/packet.js";
+import {
+    type AdapterSearchResult,
+    backgroundApplyViaPython,
+    backgroundPlanViaPython,
+    backgroundRollbackViaPython,
+    backgroundShadowViaPython,
+    backupListViaPython,
+    backupPreviewViaPython,
+    backupDownloadViaPython,
+    backupUploadViaPython,
+    cleanViaPython,
+    conflictPromptViaPython,
+    conflictResolveViaPython,
+    contextPackViaPython,
+    correctViaPython,
+    doctorViaPython,
+    evidenceArtifactsViaPython,
+    forgetViaPython,
+    getViaPython,
+    governanceViaPython,
+    linkNeighborsViaPython,
+    linkStoreViaPython,
+    onboardingViaPython,
+    profileViaPython,
+    rebuildViaPython,
+    recallViaPython,
+    rememberViaPython,
+    scanViaPython,
+    searchViaPython,
+    syncExportViaPython,
+    syncImportViaPython,
+    syncPreviewViaPython,
+    scopePolicyViaPython,
+    storageCompactViaPython,
+    storageFootprintViaPython,
+    surfaceViaPython,
+    statusViaPython,
+    storeViaPython,
+    taxonomyCleanViaPython,
+    vectorInspectViaPython,
+    visualizeViaPython,
+} from "./src/python-adapter.js";
 
 type AegisPluginConfig = {
-    enabledLayers?: CognitiveLayers[];
+    enabledLayers?: string[];
     retrievalMaxHops?: number;
     dampingFactor?: number;
     decayHalfLifeDays?: number;
@@ -17,13 +52,8 @@ type AegisPluginConfig = {
     maxNodesPerSearch?: number;
     autoCapture?: boolean;
     autoSyncOnAgentEnd?: boolean;
-};
-
-type ToolManagerContext = {
-    manager: AegisMemoryManager;
-    agentId: string;
-    workspaceDir: string;
-    sessionKey?: string;
+    pythonRetrievalAdapter?: "off" | "auto" | "force";
+    pythonToolAdapter?: "off" | "auto" | "force";
 };
 
 const STRING_SCHEMA = (description: string) => ({ type: "string", description });
@@ -38,6 +68,49 @@ const memorySearchParams = {
         minScore: NUMBER_SCHEMA("Minimum score"),
     },
     required: ["query"],
+} as const;
+
+type PythonHealthPayload = Record<string, unknown> & {
+    health_state?: string;
+    health?: {
+        state?: string;
+        issues?: unknown[];
+        capabilities?: Record<string, boolean>;
+    };
+    counts?: Record<string, unknown>;
+    issues?: unknown[];
+};
+
+const memoryContextPackParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        query: STRING_SCHEMA("Query used to build a host-ready context pack"),
+        limit: NUMBER_SCHEMA("Max results"),
+    },
+    required: ["query"],
+} as const;
+
+const memoryLinkStoreParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        sourceId: STRING_SCHEMA("Source memory ID"),
+        targetId: STRING_SCHEMA("Target memory ID"),
+        linkType: STRING_SCHEMA("Explicit relation type"),
+        weight: NUMBER_SCHEMA("Relation weight"),
+    },
+    required: ["sourceId", "targetId", "linkType"],
+} as const;
+
+const memoryLinkNeighborsParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        memoryId: STRING_SCHEMA("Seed memory ID"),
+        limit: NUMBER_SCHEMA("Max explicit linked neighbors"),
+    },
+    required: ["memoryId"],
 } as const;
 
 const memoryGetParams = {
@@ -73,8 +146,158 @@ const restoreParams = {
     additionalProperties: false,
     properties: {
         snapshotPath: STRING_SCHEMA("Local snapshot path"),
+        scopeType: STRING_SCHEMA("Optional scope type to restore selectively"),
+        scopeId: STRING_SCHEMA("Optional scope ID to restore selectively"),
     },
     required: ["snapshotPath"],
+} as const;
+
+const backupPreviewParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        snapshotPath: STRING_SCHEMA("Backup path to validate without restoring"),
+        scopeType: STRING_SCHEMA("Optional scope type to preview selectively"),
+        scopeId: STRING_SCHEMA("Optional scope ID to preview selectively"),
+    },
+    required: ["snapshotPath"],
+} as const;
+
+const conflictPromptParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        scopeType: STRING_SCHEMA("Optional scope type to filter prompts"),
+        scopeId: STRING_SCHEMA("Optional scope ID to filter prompts"),
+        subject: STRING_SCHEMA("Optional subject to filter prompts"),
+    },
+} as const;
+
+const conflictResolveParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        conflictId: STRING_SCHEMA("Conflict ID to resolve"),
+        action: STRING_SCHEMA("Resolution action"),
+        rationale: STRING_SCHEMA("Optional operator rationale"),
+    },
+    required: ["conflictId", "action"],
+} as const;
+
+const scopePolicyParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        scopeType: STRING_SCHEMA("Optional scope type to inspect"),
+        scopeId: STRING_SCHEMA("Optional scope ID to inspect"),
+        syncPolicy: STRING_SCHEMA("Optional sync policy filter for listing"),
+    },
+} as const;
+
+const syncExportParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        scopeType: STRING_SCHEMA("Scope type to export"),
+        scopeId: STRING_SCHEMA("Scope ID to export"),
+    },
+    required: ["scopeType", "scopeId"],
+} as const;
+
+const syncPreviewParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        envelopePath: STRING_SCHEMA("Sync envelope path to preview"),
+    },
+    required: ["envelopePath"],
+} as const;
+
+const syncImportParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        envelopePath: STRING_SCHEMA("Sync envelope path to import"),
+    },
+    required: ["envelopePath"],
+} as const;
+
+const governanceParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        scopeType: STRING_SCHEMA("Optional scope type"),
+        scopeId: STRING_SCHEMA("Optional scope ID"),
+        memoryId: STRING_SCHEMA("Optional memory ID"),
+        limit: NUMBER_SCHEMA("Max governance rows"),
+    },
+} as const;
+
+const backgroundPlanParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        scopeType: STRING_SCHEMA("Scope type"),
+        scopeId: STRING_SCHEMA("Scope ID"),
+    },
+    required: ["scopeType", "scopeId"],
+} as const;
+
+const backgroundRunParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        runId: STRING_SCHEMA("Background run ID"),
+    },
+    required: ["runId"],
+} as const;
+
+const backgroundApplyParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        runId: STRING_SCHEMA("Background run ID"),
+        maxMutations: NUMBER_SCHEMA("Maximum allowed mutations"),
+    },
+    required: ["runId"],
+} as const;
+
+const vectorInspectParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        query: STRING_SCHEMA("Vector inspection query"),
+        scopeType: STRING_SCHEMA("Scope type"),
+        scopeId: STRING_SCHEMA("Scope ID"),
+        includeGlobal: { type: "boolean", description: "Include global scope" },
+        limit: NUMBER_SCHEMA("Max matches"),
+    },
+    required: ["query", "scopeType", "scopeId"],
+} as const;
+
+const evidenceArtifactsParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        scopeType: STRING_SCHEMA("Optional scope type"),
+        scopeId: STRING_SCHEMA("Optional scope ID"),
+        memoryId: STRING_SCHEMA("Optional memory ID"),
+        limit: NUMBER_SCHEMA("Max artifacts"),
+    },
+} as const;
+
+const storageCompactParams = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        archivedMemoryDays: NUMBER_SCHEMA("Delete archived memory older than this many days"),
+        supersededMemoryDays: NUMBER_SCHEMA("Delete superseded memory older than this many days"),
+        evidenceDays: NUMBER_SCHEMA("Delete cold evidence rows older than this many days"),
+        governanceDays: NUMBER_SCHEMA("Delete cold governance rows older than this many days"),
+        replicationDays: NUMBER_SCHEMA("Delete replication audit rows older than this many days"),
+        backgroundDays: NUMBER_SCHEMA("Delete discarded background runs older than this many days"),
+        vacuum: { type: "boolean", description: "Run VACUUM after pruning" },
+    },
 } as const;
 
 function readWorkspaceOverrideFromEnv(): string | undefined {
@@ -106,57 +329,6 @@ function resolveWorkspaceDir(api: OpenClawPluginApi, ctx: OpenClawPluginToolCont
     return api.resolvePath("~/.openclaw/workspace");
 }
 
-async function resolveManagerContext(
-    api: OpenClawPluginApi,
-    ctx: OpenClawPluginToolContext,
-): Promise<ToolManagerContext> {
-    const agentId = ctx.agentId || "main";
-    console.log("\n[⏳] 1. Bắt đầu nạp cấu hình Aegis...");
-    const workspaceDir = resolveWorkspaceDir(api, ctx);
-    const config = (api.pluginConfig ?? {}) as AegisPluginConfig;
-
-    await fsp.mkdir(workspaceDir, { recursive: true });
-
-    console.log("[⏳] 3. Đang gọi AegisMemoryManager.create() - Vui lòng đợi...");
-    let manager;
-    try {
-        manager = await AegisMemoryManager.create({
-            agentId,
-            workspaceDir,
-            config,
-        });
-        if (manager) {
-            console.log("[✅] 4. Khởi tạo Manager THÀNH CÔNG!");
-        }
-    } catch (err) {
-        console.error("\n[🔥 LỖI BỊ GIẤU CỦA AEGIS]:", err, "\n");
-    }
-
-    if (!manager) {
-        console.log("[❌] 5. Quá trình tạo Manager thất bại ngầm.");
-        throw new Error("memory-aegis-v4: failed to initialize manager");
-    }
-    return {
-        manager,
-        agentId,
-        workspaceDir,
-        sessionKey: ctx.sessionKey,
-    };
-}
-
-async function tryResolveManagerContext(
-    api: OpenClawPluginApi,
-    ctx: OpenClawPluginToolContext,
-    failureLabel: string,
-): Promise<ToolManagerContext | null> {
-    try {
-        return await resolveManagerContext(api, ctx);
-    } catch (err) {
-        api.logger.warn(`${failureLabel}: ${String(err)}`);
-        return null;
-    }
-}
-
 function extractUserTexts(messages: unknown[]): string[] {
     const texts: string[] = [];
     for (const msg of messages) {
@@ -180,42 +352,180 @@ function extractUserTexts(messages: unknown[]): string[] {
     return texts;
 }
 
+function renderSearchText(results: AdapterSearchResult[]): string {
+    return results
+        .map(
+            (entry: AdapterSearchResult, index: number) =>
+                `${index + 1}. ${entry.path}:${entry.startLine}-${entry.endLine} (${entry.score.toFixed(3)})\n${entry.snippet}`,
+        )
+        .join("\n\n");
+}
+
+function extractHealthState(payload: PythonHealthPayload): string {
+    const nested = payload.health;
+    if (nested && typeof nested === "object" && typeof nested.state === "string") {
+        return nested.state;
+    }
+    return typeof payload.health_state === "string" ? payload.health_state : "UNKNOWN";
+}
+
+function renderPrependContext(results: AdapterSearchResult[], query: string): string {
+    const top = results.slice(0, 5);
+    const lines = [
+        "Relevant Aegis memory context:",
+        `Query: ${query}`,
+        "",
+    ];
+    for (const [index, result] of top.entries()) {
+        lines.push(`${index + 1}. ${result.snippet}`);
+        lines.push(`   Source: ${result.path}`);
+        if (result.citation) {
+            lines.push(`   Why: ${result.citation}`);
+        }
+        lines.push("");
+    }
+    return lines.join("\n").trimEnd();
+}
+
 const memoryPlugin = {
-    id: "memory-aegis-v4",
-    name: "Memory Aegis v4",
+    id: "memory-aegis-v8",
+    name: "Memory Aegis v8",
     description: "Graph activation memory plugin with FTS5 retrieval and cognitive hooks",
     kind: "memory" as const,
 
     register(api: OpenClawPluginApi) {
-        api.registerTool(
-            (ctx: OpenClawPluginToolContext) => [
+        const buildTools = (ctx: OpenClawPluginToolContext) => {
+            const tools = [
                 {
                     name: "memory_search",
                     label: "Memory Search",
                     description: "Search Aegis memory for relevant context.",
                     parameters: memorySearchParams,
                     async execute(_toolCallId: string, params: { query: string; limit?: number; minScore?: number }) {
-                        const { manager, sessionKey } = await resolveManagerContext(api, ctx);
-                        const results = await manager.search(params.query, {
-                            maxResults: params.limit,
-                            minScore: params.minScore,
-                            sessionKey,
+                        const python = await searchViaPython({
+                            query: params.query,
+                            limit: params.limit,
+                            scopeType: "agent",
+                            scopeId: ctx.agentId || "main",
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
                         });
-                        if (results.length === 0) {
+                        if (python.mappedResults.length === 0) {
                             return {
                                 content: [{ type: "text", text: "No relevant memories found." }],
-                                details: { count: 0 },
+                                details: { count: 0, backend: "python", pythonResults: python.rawResults },
                             };
                         }
-                        const text = results
-                            .map(
-                                (entry: MemorySearchResult, index: number) =>
-                                    `${index + 1}. ${entry.path}:${entry.startLine}-${entry.endLine} (${entry.score.toFixed(3)})\n${entry.snippet}`,
-                            )
-                            .join("\n\n");
                         return {
-                            content: [{ type: "text", text }],
-                            details: { count: results.length, results },
+                            content: [{ type: "text", text: renderSearchText(python.mappedResults) }],
+                            details: {
+                                count: python.mappedResults.length,
+                                backend: "python",
+                                results: python.mappedResults,
+                                pythonResults: python.rawResults,
+                            },
+                        };
+                    },
+                },
+                {
+                    name: "memory_conflict_prompt",
+                    label: "Memory Conflict Prompt",
+                    description: "List conflict prompts that require explicit review or resolution.",
+                    parameters: conflictPromptParams,
+                    async execute(
+                        _toolCallId: string,
+                        params: { scopeType?: string; scopeId?: string; subject?: string },
+                    ) {
+                        const payload = await conflictPromptViaPython({
+                            scopeType: params.scopeType,
+                            scopeId: params.scopeId,
+                            subject: params.subject,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_conflict_resolve",
+                    label: "Memory Conflict Resolve",
+                    description: "Apply an explicit resolution action to a conflict prompt.",
+                    parameters: conflictResolveParams,
+                    async execute(
+                        _toolCallId: string,
+                        params: { conflictId: string; action: string; rationale?: string },
+                    ) {
+                        const payload = await conflictResolveViaPython({
+                            conflictId: params.conflictId,
+                            action: params.action,
+                            rationale: params.rationale,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_context_pack",
+                    label: "Memory Context Pack",
+                    description: "Build a lexical-first, explainable context pack for the current host model.",
+                    parameters: memoryContextPackParams,
+                    async execute(_toolCallId: string, params: { query: string; limit?: number }) {
+                        const payload = await contextPackViaPython({
+                            query: params.query,
+                            limit: params.limit,
+                            scopeType: "agent",
+                            scopeId: ctx.agentId || "main",
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_link_store",
+                    label: "Memory Link Store",
+                    description: "Create or update an explicit relation between two memories in the same scope.",
+                    parameters: memoryLinkStoreParams,
+                    async execute(
+                        _toolCallId: string,
+                        params: { sourceId: string; targetId: string; linkType: string; weight?: number },
+                    ) {
+                        const payload = await linkStoreViaPython({
+                            sourceId: params.sourceId,
+                            targetId: params.targetId,
+                            linkType: params.linkType,
+                            weight: params.weight,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_link_neighbors",
+                    label: "Memory Link Neighbors",
+                    description: "Inspect explicit linked neighbors for a memory node.",
+                    parameters: memoryLinkNeighborsParams,
+                    async execute(
+                        _toolCallId: string,
+                        params: { memoryId: string; limit?: number },
+                    ) {
+                        const payload = await linkNeighborsViaPython({
+                            memoryId: params.memoryId,
+                            limit: params.limit,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
                         };
                     },
                 },
@@ -228,11 +538,15 @@ const memoryPlugin = {
                         _toolCallId: string,
                         params: { relPath: string; from?: number; lines?: number },
                     ) {
-                        const { manager } = await resolveManagerContext(api, ctx);
-                        const result = await manager.readFile(params);
+                        const payload = await getViaPython({
+                            relPath: params.relPath,
+                            from: params.from,
+                            lines: params.lines,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
                         return {
-                            content: [{ type: "text", text: result.text }],
-                            details: result,
+                            content: [{ type: "text", text: payload.text }],
+                            details: payload,
                         };
                     },
                 },
@@ -242,16 +556,109 @@ const memoryPlugin = {
                     description: "Persist user-provided text into Aegis memory by syncing a scratch note.",
                     parameters: memoryStoreParams,
                     async execute(_toolCallId: string, params: { text: string }) {
-                        const { manager, workspaceDir } = await resolveManagerContext(api, ctx);
-                        const storeDir = path.join(workspaceDir, "memory");
-                        const storePath = path.join(storeDir, "aegis-capture.md");
-                        await fsp.mkdir(storeDir, { recursive: true });
-                        const line = `\n- ${new Date().toISOString()} ${params.text}\n`;
-                        await fsp.appendFile(storePath, line, "utf8");
-                        await manager.sync({ reason: "memory_store" });
+                        const message = await storeViaPython({
+                            text: params.text,
+                            scopeType: "agent",
+                            scopeId: ctx.agentId || "main",
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
                         return {
-                            content: [{ type: "text", text: "Stored in Aegis memory." }],
-                            details: { path: storePath },
+                            content: [{ type: "text", text: message || "Stored in Aegis memory." }],
+                            details: { backend: "python" },
+                        };
+                    },
+                },
+                {
+                    name: "memory_surface",
+                    label: "Memory Surface",
+                    description: "Describe the Python-owned public memory contract, including bounded health states and capability reporting.",
+                    parameters: { type: "object", properties: {} },
+                    async execute(_toolCallId: string) {
+                        const payload = await surfaceViaPython({
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_scope_policy",
+                    label: "Memory Scope Policy",
+                    description: "Inspect local-only versus sync-eligible scope policy without requiring any remote backend.",
+                    parameters: scopePolicyParams,
+                    async execute(
+                        _toolCallId: string,
+                        params: { scopeType?: string; scopeId?: string; syncPolicy?: string },
+                    ) {
+                        const payload = await scopePolicyViaPython({
+                            scopeType: params.scopeType,
+                            scopeId: params.scopeId,
+                            syncPolicy: params.syncPolicy,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_sync_export",
+                    label: "Memory Sync Export",
+                    description: "Export a Python-owned sync envelope for a specific scope.",
+                    parameters: syncExportParams,
+                    async execute(
+                        _toolCallId: string,
+                        params: { scopeType: string; scopeId: string },
+                    ) {
+                        const payload = await syncExportViaPython({
+                            scopeType: params.scopeType,
+                            scopeId: params.scopeId,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_sync_preview",
+                    label: "Memory Sync Preview",
+                    description: "Preview a Python-owned sync envelope before importing it.",
+                    parameters: syncPreviewParams,
+                    async execute(
+                        _toolCallId: string,
+                        params: { envelopePath: string },
+                    ) {
+                        const payload = await syncPreviewViaPython({
+                            envelopePath: params.envelopePath,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_sync_import",
+                    label: "Memory Sync Import",
+                    description: "Import a Python-owned sync envelope into local Aegis storage.",
+                    parameters: syncImportParams,
+                    async execute(
+                        _toolCallId: string,
+                        params: { envelopePath: string },
+                    ) {
+                        const payload = await syncImportViaPython({
+                            envelopePath: params.envelopePath,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
                         };
                     },
                 },
@@ -261,13 +668,13 @@ const memoryPlugin = {
                     description: "Create a local Aegis snapshot/export for upload workflows.",
                     parameters: backupParams,
                     async execute(_toolCallId: string, params: { mode?: "snapshot" | "export" }) {
-                        const { manager, workspaceDir } = await resolveManagerContext(api, ctx);
-                        const destDir = path.join(workspaceDir, "exports");
-                        await fsp.mkdir(destDir, { recursive: true });
-                        const result = await manager.backup(params.mode === "export" ? "export" : "snapshot", destDir);
+                        const payload = await backupUploadViaPython({
+                            mode: params.mode,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
                         return {
-                            content: [{ type: "text", text: `Backup created in ${destDir}` }],
-                            details: result,
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
                         };
                     },
                 },
@@ -276,26 +683,147 @@ const memoryPlugin = {
                     label: "Memory Backup Download",
                     description: "Restore Aegis memory from a local snapshot file path.",
                     parameters: restoreParams,
-                    async execute(_toolCallId: string, params: { snapshotPath: string }) {
-                        const { manager } = await resolveManagerContext(api, ctx);
-                        const result = await manager.restore(params.snapshotPath);
+                    async execute(
+                        _toolCallId: string,
+                        params: { snapshotPath: string; scopeType?: string; scopeId?: string },
+                    ) {
+                        const payload = await backupDownloadViaPython({
+                            snapshotPath: params.snapshotPath,
+                            scopeType: params.scopeType,
+                            scopeId: params.scopeId,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
                         return {
-                            content: [{ type: "text", text: `Restore completed from ${params.snapshotPath}` }],
-                            details: result,
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_backup_list",
+                    label: "Memory Backup List",
+                    description: "List known Aegis backups with manifest-backed metadata.",
+                    parameters: { type: "object", properties: {} },
+                    async execute(_toolCallId: string) {
+                        const payload = await backupListViaPython({
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_backup_preview",
+                    label: "Memory Backup Preview",
+                    description: "Validate a backup and preview restore impact without mutating the active DB.",
+                    parameters: backupPreviewParams,
+                    async execute(
+                        _toolCallId: string,
+                        params: { snapshotPath: string; scopeType?: string; scopeId?: string },
+                    ) {
+                        const payload = await backupPreviewViaPython({
+                            snapshotPath: params.snapshotPath,
+                            scopeType: params.scopeType,
+                            scopeId: params.scopeId,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
                         };
                     },
                 },
                 {
                     name: "memory_stats",
                     label: "Memory Stats",
-                    description: "View detailed Aegis memory telemetry and growth stats (Honeybee dance).",
+                    description: "View Python-owned Aegis status with bounded health state, issues, and capability flags.",
                     parameters: { type: "object", properties: {} },
                     async execute(_toolCallId: string) {
-                        const { manager } = await resolveManagerContext(api, ctx);
-                        const { text, data } = await manager.getHoneybeeStats();
+                        const payload = await statusViaPython({ workspaceDir: resolveWorkspaceDir(api, ctx) }) as PythonHealthPayload;
+                        const healthState = extractHealthState(payload);
+                        const activeCount = Number((payload.counts as Record<string, unknown> | undefined)?.active ?? 0);
+                        const summaryLines = [
+                            "Aegis status summary:",
+                            healthState === "HEALTHY"
+                                ? "Aegis is ready and local memory is working normally."
+                                : healthState === "DEGRADED_SYNC"
+                                  ? "Aegis is usable locally, but some optional sync-related features are degraded."
+                                  : "Aegis is not ready for safe memory use right now.",
+                            `Active memories: ${activeCount}`,
+                            `Health state: ${healthState}`,
+                        ];
+                        if (healthState === "DEGRADED_SYNC") {
+                            summaryLines.push("Local remember and recall still work.");
+                        }
                         return {
-                            content: [{ type: "text", text }],
-                            details: data,
+                            content: [{ type: "text", text: summaryLines.join("\n") }],
+                            details: { backend: "python", ...payload },
+                        };
+                    },
+                },
+                {
+                    name: "memory_clean",
+                    label: "Memory Clean",
+                    description: "Run Aegis Python maintenance and conflict scan.",
+                    parameters: {
+                        type: "object",
+                        additionalProperties: false,
+                        properties: {
+                            subject: STRING_SCHEMA("Optional subject to scan for conflicts"),
+                            dryRun: { type: "boolean", description: "Not supported by the Python adapter yet" },
+                        },
+                    },
+                    async execute(_toolCallId: string, params: { subject?: string; dryRun?: boolean }) {
+                        if (params.dryRun) {
+                            return {
+                                content: [{ type: "text", text: "memory_clean dryRun is not supported by the Python adapter." }],
+                                details: { backend: "python", dryRunSupported: false },
+                            };
+                        }
+                        const payload = await cleanViaPython({
+                            subject: params.subject,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: { backend: "python", ...payload },
+                        };
+                    },
+                },
+                {
+                    name: "memory_setup",
+                    label: "Memory Setup",
+                    description: "Run the Python-owned first-run setup and readiness checks for Aegis.",
+                    parameters: { type: "object", properties: {} },
+                    async execute(_toolCallId: string) {
+                        const payload = await onboardingViaPython({
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        const summary = typeof payload.summary === "string"
+                            ? payload.summary
+                            : JSON.stringify(payload, null, 2);
+                        return {
+                            content: [{ type: "text", text: summary }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_profile",
+                    label: "Memory Profile",
+                    description: "Show the Python memory profile for the current agent scope.",
+                    parameters: { type: "object", properties: {} },
+                    async execute(_toolCallId: string) {
+                        const profile = await profileViaPython({
+                            scopeId: ctx.agentId || "main",
+                            scopeType: "agent",
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: profile }],
+                            details: { backend: "python" },
                         };
                     },
                 },
@@ -305,11 +833,12 @@ const memoryPlugin = {
                     description: "Trigger Axolotl regeneration to regrow derived knowledge links.",
                     parameters: { type: "object", properties: {} },
                     async execute(_toolCallId: string) {
-                        const { manager } = await resolveManagerContext(api, ctx);
-                        const result = await manager.regenerateDerivedData();
+                        const payload = await rebuildViaPython({
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
                         return {
-                            content: [{ type: "text", text: `Axolotl regenerated ${result.createdRelations} new knowledge links.` }],
-                            details: result,
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
                         };
                     },
                 },
@@ -319,22 +848,12 @@ const memoryPlugin = {
                     description: "Trigger Meerkat Sentry to scan for logical contradictions in memory.",
                     parameters: { type: "object", properties: {} },
                     async execute(_toolCallId: string) {
-                        const { manager } = await resolveManagerContext(api, ctx);
-                        const conflicts = await manager.runMeerkatScan();
-                        if (conflicts.length === 0) {
-                            return {
-                                content: [{ type: "text", text: "🦦 Meerkat scan completed: No contradictions found on the horizon." }],
-                                details: { count: 0 },
-                            };
-                        }
-                        const text = [
-                            `🦦 **Meerkat Sentry Alert: Found ${conflicts.length} contradictions!**`,
-                            ...conflicts.map((c: any, i: number) => `${i + 1}. ${c.reason}\n   Nodes: ${c.nodeA} ↔ ${c.nodeB}`),
-                            "\n👉 *Check 'drift_events' for full audit trail.*"
-                        ].join("\n");
+                        const payload = await scanViaPython({
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
                         return {
-                            content: [{ type: "text", text }],
-                            details: { count: conflicts.length, conflicts },
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
                         };
                     },
                 },
@@ -344,22 +863,194 @@ const memoryPlugin = {
                     description: "Generate an Eagle Eye visual snapshot of the memory graph.",
                     parameters: { type: "object", properties: { limit: { type: "number", default: 1000 } } },
                     async execute(_toolCallId: string, params: any) {
-                        const { manager } = await resolveManagerContext(api, ctx);
-                        const data = await manager.getEagleSnapshot(params.limit);
-
-                        const canvasDir = path.join(process.env.HOME || "", ".openclaw", "canvas");
-                        const dataPath = path.join(canvasDir, "eagle_data.json");
-                        const viewerPath = path.join(canvasDir, "eagle-viewer.html");
-
-                        await fsp.mkdir(canvasDir, { recursive: true });
-                        await fsp.writeFile(dataPath, JSON.stringify(data, null, 2), "utf8");
-
+                        const payload = await visualizeViaPython({
+                            limit: params.limit,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
                         return {
-                            content: [{
-                                type: "text",
-                                text: `🦅 **Eagle Eye Snapshot Generated!**\n\n- Data: ${data.nodes.length} nodes, ${data.links.length} edges.\n- Viewer: ${viewerPath}\n\n👉 *Hãy mở file HTML trên bằng trình duyệt của đại ca để soi rọi bộ não.*`
-                            }],
-                            details: { path: viewerPath, nodeCount: data.nodes.length },
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_governance",
+                    label: "Memory Governance",
+                    description: "Inspect governance events and state transitions for the Python-owned runtime.",
+                    parameters: governanceParams,
+                    async execute(
+                        _toolCallId: string,
+                        params: { scopeType?: string; scopeId?: string; memoryId?: string; limit?: number },
+                    ) {
+                        const payload = await governanceViaPython({
+                            scopeType: params.scopeType,
+                            scopeId: params.scopeId,
+                            memoryId: params.memoryId,
+                            limit: params.limit,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_background_plan",
+                    label: "Memory Background Plan",
+                    description: "Plan governed background intelligence proposals for a scope.",
+                    parameters: backgroundPlanParams,
+                    async execute(_toolCallId: string, params: { scopeType: string; scopeId: string }) {
+                        const payload = await backgroundPlanViaPython({
+                            scopeType: params.scopeType,
+                            scopeId: params.scopeId,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_background_shadow",
+                    label: "Memory Background Shadow",
+                    description: "Shadow-run a planned background intelligence proposal.",
+                    parameters: backgroundRunParams,
+                    async execute(_toolCallId: string, params: { runId: string }) {
+                        const payload = await backgroundShadowViaPython({
+                            runId: params.runId,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_background_apply",
+                    label: "Memory Background Apply",
+                    description: "Apply a governed background run with blast-radius controls.",
+                    parameters: backgroundApplyParams,
+                    async execute(_toolCallId: string, params: { runId: string; maxMutations?: number }) {
+                        const payload = await backgroundApplyViaPython({
+                            runId: params.runId,
+                            maxMutations: params.maxMutations,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_background_rollback",
+                    label: "Memory Background Rollback",
+                    description: "Rollback an applied background intelligence run.",
+                    parameters: backgroundRunParams,
+                    async execute(_toolCallId: string, params: { runId: string }) {
+                        const payload = await backgroundRollbackViaPython({
+                            runId: params.runId,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_vector_inspect",
+                    label: "Memory Vector Inspect",
+                    description: "Inspect local vector-store matches for a scoped query.",
+                    parameters: vectorInspectParams,
+                    async execute(
+                        _toolCallId: string,
+                        params: { query: string; scopeType: string; scopeId: string; includeGlobal?: boolean; limit?: number },
+                    ) {
+                        const payload = await vectorInspectViaPython({
+                            query: params.query,
+                            scopeType: params.scopeType,
+                            scopeId: params.scopeId,
+                            includeGlobal: params.includeGlobal,
+                            limit: params.limit,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_evidence_artifacts",
+                    label: "Memory Evidence Artifacts",
+                    description: "List evidence artifacts recorded by the Python-owned runtime.",
+                    parameters: evidenceArtifactsParams,
+                    async execute(
+                        _toolCallId: string,
+                        params: { scopeType?: string; scopeId?: string; memoryId?: string; limit?: number },
+                    ) {
+                        const payload = await evidenceArtifactsViaPython({
+                            scopeType: params.scopeType,
+                            scopeId: params.scopeId,
+                            memoryId: params.memoryId,
+                            limit: params.limit,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_storage_footprint",
+                    label: "Memory Storage Footprint",
+                    description: "Inspect SQLite storage footprint and current compaction policy.",
+                    parameters: { type: "object", properties: {} },
+                    async execute(_toolCallId: string) {
+                        const payload = await storageFootprintViaPython({
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
+                        };
+                    },
+                },
+                {
+                    name: "memory_storage_compact",
+                    label: "Memory Storage Compact",
+                    description: "Prune cold historical rows and reclaim SQLite space with bounded compaction.",
+                    parameters: storageCompactParams,
+                    async execute(
+                        _toolCallId: string,
+                        params: {
+                            archivedMemoryDays?: number;
+                            supersededMemoryDays?: number;
+                            evidenceDays?: number;
+                            governanceDays?: number;
+                            replicationDays?: number;
+                            backgroundDays?: number;
+                            vacuum?: boolean;
+                        },
+                    ) {
+                        const payload = await storageCompactViaPython({
+                            archivedMemoryDays: params.archivedMemoryDays,
+                            supersededMemoryDays: params.supersededMemoryDays,
+                            evidenceDays: params.evidenceDays,
+                            governanceDays: params.governanceDays,
+                            replicationDays: params.replicationDays,
+                            backgroundDays: params.backgroundDays,
+                            vacuum: params.vacuum,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
                         };
                     },
                 },
@@ -369,61 +1060,161 @@ const memoryPlugin = {
                     description: "Trigger Bowerbird to classify and harden missing taxonomies in memory nodes.",
                     parameters: { type: "object", properties: {} },
                     async execute(_toolCallId: string) {
-                        const { manager } = await resolveManagerContext(api, ctx);
-                        const result = await manager.runTaxonomyCleanup();
+                        const payload = await taxonomyCleanViaPython({
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
                         return {
-                            content: [{ type: "text", text: `🪶 Bowerbird đã dán nhãn thành công cho ${result.classified} ký ức vô danh.` }],
-                            details: result,
+                            content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+                            details: payload,
                         };
                     },
                 },
                 {
                     name: "memory_doctor",
                     label: "Memory Doctor",
-                    description: "Check Aegis system health and diagnose issues.",
+                    description: "Check Python-owned Aegis health with structured issue codes and capability flags.",
                     parameters: { type: "object", properties: {} },
                     async execute(_toolCallId: string) {
-                        const { manager } = await resolveManagerContext(api, ctx);
-                        const { text, data } = await manager.diagnose();
+                        const payload = await doctorViaPython({
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        }) as PythonHealthPayload;
+                        const healthState = extractHealthState(payload);
+                        const summaryLines = [
+                            "Aegis doctor summary:",
+                            healthState === "HEALTHY"
+                                ? "Aegis memory is operating normally."
+                                : healthState === "DEGRADED_SYNC"
+                                  ? "Aegis is usable locally, but some optional sync-related features are degraded."
+                                  : "Aegis is not ready for safe memory use right now.",
+                            `Health state: ${healthState}`,
+                        ];
+                        const issues = Array.isArray(payload.issues) ? payload.issues : [];
+                        if (issues.length > 0) {
+                            summaryLines.push(`Current issues: ${issues.join(", ")}`);
+                        }
                         return {
-                            content: [{ type: "text", text }],
-                            details: data,
+                            content: [{ type: "text", text: summaryLines.join("\n") }],
+                            details: payload,
                         };
                     },
                 },
-            ],
-            { names: ["memory_search", "memory_get", "memory_store", "memory_backup_upload", "memory_backup_download", "memory_stats", "memory_rebuild", "memory_scan", "memory_visualize", "memory_taxonomy_clean", "memory_doctor"] },
+                {
+                    name: "memory_remember",
+                    label: "Memory Remember",
+                    description: "Simplified action: store a piece of information into memory using natural language.",
+                    parameters: {
+                        type: "object",
+                        additionalProperties: false,
+                        properties: {
+                            content: STRING_SCHEMA("The information to remember"),
+                        },
+                        required: ["content"],
+                    },
+                    async execute(_toolCallId: string, params: { content: string }) {
+                        const message = await rememberViaPython({
+                            content: params.content,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: message }],
+                            details: { backend: "python" },
+                        };
+                    },
+                },
+                {
+                    name: "memory_recall",
+                    label: "Memory Recall",
+                    description: "Simplified action: retrieve memories related to a query using natural language.",
+                    parameters: {
+                        type: "object",
+                        additionalProperties: false,
+                        properties: {
+                            query: STRING_SCHEMA("What to recall from memory"),
+                        },
+                        required: ["query"],
+                    },
+                    async execute(_toolCallId: string, params: { query: string }) {
+                        const message = await recallViaPython({
+                            query: params.query,
+                            scopeType: "agent",
+                            scopeId: ctx.agentId || "main",
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: message }],
+                            details: { backend: "python" },
+                        };
+                    },
+                },
+                {
+                    name: "memory_correct",
+                    label: "Memory Correct",
+                    description: "Simplified action: correct or update an existing piece of information in memory.",
+                    parameters: {
+                        type: "object",
+                        additionalProperties: false,
+                        properties: {
+                            content: STRING_SCHEMA("The corrected information"),
+                        },
+                        required: ["content"],
+                    },
+                    async execute(_toolCallId: string, params: { content: string }) {
+                        const message = await correctViaPython({
+                            content: params.content,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: message }],
+                            details: { backend: "python" },
+                        };
+                    },
+                },
+                {
+                    name: "memory_forget",
+                    label: "Memory Forget",
+                    description: "Simplified action: remove a specific piece of information from memory.",
+                    parameters: {
+                        type: "object",
+                        additionalProperties: false,
+                        properties: {
+                            query: STRING_SCHEMA("What to forget from memory"),
+                        },
+                        required: ["query"],
+                    },
+                    async execute(_toolCallId: string, params: { query: string }) {
+                        const message = await forgetViaPython({
+                            query: params.query,
+                            workspaceDir: resolveWorkspaceDir(api, ctx),
+                        });
+                        return {
+                            content: [{ type: "text", text: message }],
+                            details: { backend: "python" },
+                        };
+                    },
+                },
+            ];
+            return tools;
+        };
+        const toolNames = buildTools({ agentId: "", workspaceDir: "", sessionKey: "" } as OpenClawPluginToolContext).map(
+            (tool) => tool.name,
         );
+        api.registerTool(buildTools, { names: toolNames });
 
         api.on("before_agent_start", async (event: any, hookCtx: any) => {
-            const context = await tryResolveManagerContext(
-                api,
-                {
-                    agentId: hookCtx.agentId,
-                    workspaceDir: hookCtx.workspaceDir,
-                    sessionKey: hookCtx.sessionKey,
-                    config: hookCtx.config,
-                },
-                "memory-aegis-v4 recall hook failed",
-            );
-            if (!context) {
-                return;
-            }
-            const { manager } = context;
-            const results = await manager.search(event.prompt, {
-                maxResults: 10, // Lấy nhiều hơn để Cảnh sát giao thông lọc lại
-                sessionKey: hookCtx.sessionKey,
+            const python = await searchViaPython({
+                query: event.prompt,
+                limit: 10,
+                scopeType: "agent",
+                scopeId: hookCtx.agentId || "main",
+                workspaceDir: resolveWorkspaceDir(api, hookCtx),
             });
+            const results = python.mappedResults;
 
             console.log("\n[✅] 5. AEGIS ĐÃ TÌM XONG KÝ ỨC! Đang qua Cảnh sát giao thông Router...\n");
 
             if (results.length === 0) return;
 
-            const prependContext = AegisRouter.enforce(results, {
-                maxChars: 3000, // Thuế Token: giới hạn 3000 ký tự
-                topK: 5,        // Xếp hàng: lấy Top 5 tinh túy nhất
-                query: event.prompt
-            });
+            const prependContext = renderPrependContext(results, event.prompt);
 
             return { prependContext };
         });
@@ -433,65 +1224,35 @@ const memoryPlugin = {
             if (config.autoCapture === false) {
                 return;
             }
-            const context = await tryResolveManagerContext(
-                api,
-                {
-                    agentId: hookCtx.agentId,
-                    workspaceDir: hookCtx.workspaceDir,
-                    sessionKey: hookCtx.sessionKey,
-                    config: hookCtx.config,
-                },
-                "memory-aegis-v4 capture hook failed",
-            );
-            if (!context) {
-                return;
-            }
-            const { manager } = context;
             void (async () => {
                 try {
                     const texts = extractUserTexts(event.messages ?? []);
-                    if (texts.length > 0) {
-                        const memoryDir = path.join(resolveWorkspaceDir(api, hookCtx), "memory");
-                        const storePath = path.join(memoryDir, "aegis-session-capture.md");
-                        await fsp.mkdir(memoryDir, { recursive: true });
-                        const payload = texts.map((text) => `- ${new Date().toISOString()} ${text}`).join("\n") + "\n";
-                        await fsp.appendFile(storePath, payload, "utf8");
-                    }
-
-                    // === WEAVER BIRD (Nút thắt Quy Trình) ===
-                    try {
-                        const userGoal = texts[0] || "Autonomous Workflow";
-                        const blueprint = WeaverBird.extractProceduralBlueprint(event.messages ?? [], userGoal);
-                        if (blueprint) {
-                            // Hardened: pass goalFingerprint for versioning
-                            const goalFingerprint = userGoal.substring(0, 100).toLowerCase().replace(/\s+/g, " ").trim();
-                            WeaverBird.saveBlueprint(manager.getDb(), blueprint, goalFingerprint);
-                        }
-                    } catch (err) {
-                        console.warn("Weaver Bird trace extraction failed:", err);
+                    for (const text of texts) {
+                        await storeViaPython({
+                            text,
+                            scopeType: "agent",
+                            scopeId: hookCtx.agentId || "main",
+                            workspaceDir: resolveWorkspaceDir(api, hookCtx),
+                        });
                     }
 
                     if (config.autoSyncOnAgentEnd === true) {
-                        await manager.sync({
-                            reason: "agent_end",
-                            sessionFiles: hookCtx.sessionFile ? [hookCtx.sessionFile] : undefined,
+                        await cleanViaPython({
+                            workspaceDir: resolveWorkspaceDir(api, hookCtx),
                         });
-                        await manager.runMaintenance();
                     }
                 } catch (err) {
-                    api.logger.warn(`memory-aegis-v4 background capture failed: ${String(err)}`);
+                    api.logger.warn(`memory-aegis-v8 background capture failed: ${String(err)}`);
                 }
             })();
         });
 
         api.registerService({
-            id: "memory-aegis-v4",
+            id: "memory-aegis-v8",
             start: () => {
-                api.logger.info("memory-aegis-v4 registered");
+                api.logger.info("memory-aegis-v8 registered");
             },
-            stop: async () => {
-                await closeAllManagers();
-            },
+            stop: async () => undefined,
         });
     },
 };

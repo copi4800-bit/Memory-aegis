@@ -1,0 +1,42 @@
+{
+  "level": "level-6",
+  "metrics": {
+    "variants_tested": 4,
+    "repair_success_rate": 0.5
+  },
+  "details": [
+    {
+      "variant": 0,
+      "boot_ok": true,
+      "store_ok": false,
+      "search_ok": false,
+      "repair_error": "table memories has no column named origin_node_id",
+      "startup_latency_ms": 33.178378973389044
+    },
+    {
+      "variant": 1,
+      "boot_ok": true,
+      "store_ok": false,
+      "search_ok": false,
+      "repair_error": "table memories has no column named origin_node_id",
+      "startup_latency_ms": 31.05419600615278
+    },
+    {
+      "variant": 2,
+      "boot_ok": true,
+      "store_ok": true,
+      "search_ok": true,
+      "repair_error": null,
+      "startup_latency_ms": 33.45865599112585
+    },
+    {
+      "variant": 3,
+      "boot_ok": true,
+      "store_ok": true,
+      "search_ok": true,
+      "repair_error": null,
+      "startup_latency_ms": 61.91989500075579
+    }
+  ],
+  "timestamp": "20260325_073121"
+}

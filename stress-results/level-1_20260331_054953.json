@@ -1,0 +1,13 @@
+{
+  "level": "level-1",
+  "timestamp": "20260331_054953",
+  "metrics": {
+    "recall_at_1": 0.728,
+    "recall_at_5": 0.728,
+    "latency_p50": 1.2266669946257025,
+    "latency_p95": 2.790528816694859,
+    "scope_leakage": 0.0,
+    "conflict_leakage": 0.0,
+    "conflict_visibility": 1.0
+  }
+}

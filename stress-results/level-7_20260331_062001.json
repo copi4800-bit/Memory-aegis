@@ -1,0 +1,37 @@
+{
+  "level": "level-7",
+  "metrics": {
+    "total_errors": 0,
+    "total_timeouts": 0
+  },
+  "details": [
+    {
+      "rate": 10,
+      "total": 10,
+      "successes": 10,
+      "errors": 0,
+      "timeouts": 0,
+      "avg_latency_ms": 0.6665759923635051,
+      "p95_latency_ms": 1.8588030070532113
+    },
+    {
+      "rate": 50,
+      "total": 50,
+      "successes": 50,
+      "errors": 0,
+      "timeouts": 0,
+      "avg_latency_ms": 0.8730742993066087,
+      "p95_latency_ms": 3.5704979964066297
+    },
+    {
+      "rate": 100,
+      "total": 100,
+      "successes": 100,
+      "errors": 0,
+      "timeouts": 0,
+      "avg_latency_ms": 1.0584139500861056,
+      "p95_latency_ms": 4.984612023690715
+    }
+  ],
+  "timestamp": "20260331_062001"
+}

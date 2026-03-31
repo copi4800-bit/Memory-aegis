@@ -1,13 +1,27 @@
-# Project: Memory Aegis v4
+# Project: Aegis v4 (Python)
 
-## Overview
-Memory Aegis v4 là hệ thống quản lý bộ nhớ nhận thức (cognitive memory) của OpenClaw, sử dụng 16 layer động vật để bảo vệ, phân loại và truy xuất tri thức.
+## Vision
+Aegis Python is a local-first memory engine for OpenClaw and MCP-based agents. It provides durable, scope-aware, and explainable memory storage and retrieval.
 
-## Primary Goal
-Nâng cấp và hoàn thiện hệ thống Memory Aegis v4, xử lý triệt để 686 unlabeled nodes và tối ưu hóa các layer liên kết đồ thị (Eagle Eye).
+## Core Values
+- **Reliability**: Recalls the right memory for the current scope without corruption.
+- **Explainability**: Every result must be traceable to provenance and clear reasoning.
+- **Hygiene**: Bounded reinforcement and decay to keep memory fresh and relevant.
+- **Privacy**: Local-first storage (SQLite) with strict scope isolation.
 
-## Success Criteria
-1. Giảm tỷ lệ Unlabeled Nodes xuống dưới 5%.
-2. Tối ưu hóa Taxonomy: Tách nhỏ `technical.stack` thành các danh mục con.
-3. Giải quyết 2 mâu thuẫn phong cách (Style Conflicts) hiện có.
-4. Đảm bảo toàn bộ 16 layer hoạt động ổn định và chính xác.
+## Workflow
+- **Feature Truth**: `specs/*`
+- **Governance**: `.specify/memory/constitution.md`
+- **Execution Layer**: `.planning/*`
+- **Workflow Contract**: `specs/*` + `.specify/memory/constitution.md`, with `.planning/*` as orchestration only
+
+## Tech Stack
+- **Runtime**: Python 3.11+
+- **Database**: SQLite + FTS5
+- **Interface**: MCP / OpenClaw host bootstrap
+
+## Current Direction
+- Python is the only intended engine owner.
+- Any remaining TypeScript is transitional host/bootstrap code only.
+- `.planning/` is derivative and must be kept aligned with active feature specs.
+- Legacy implementation detail belongs in `specs/*` or code, not in `.planning/*`.

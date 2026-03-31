@@ -1,32 +1,13 @@
 /**
- * Session lifecycle hooks for OpenClaw integration.
+ * Legacy compatibility stub for the retired TypeScript session-hook path.
+ *
+ * The production session lifecycle path now lives in the root OpenClaw plugin
+ * bootstrap and routes behavior into `aegis_py`.
  */
 
-import type { AegisMemoryManager } from "../aegis-manager.js";
-import { prewarm, consolidateSession, flushPending } from "../cognitive/dolphin.js";
+const LEGACY_SESSION_HOOK_ERROR =
+  "TypeScript session hooks have been retired. Use the root plugin bootstrap and Python-owned surfaces in aegis_py instead.";
 
-export function createSessionHooks(getManager: () => AegisMemoryManager | null) {
-  return {
-    async onSessionStart(sessionKey: string): Promise<void> {
-      const manager = getManager();
-      if (!manager) return;
-
-      if (manager.layerEnabled("dolphin")) {
-        prewarm(manager.getDb(), sessionKey);
-      }
-    },
-
-    async onSessionEnd(sessionKey: string): Promise<void> {
-      const manager = getManager();
-      if (!manager) return;
-
-      if (manager.layerEnabled("dolphin")) {
-        consolidateSession(manager.getDb(), sessionKey);
-        flushPending(manager.getDb());
-      }
-
-      // Run maintenance on session end
-      void manager.runMaintenance();
-    },
-  };
+export function createSessionHooks(): never {
+  throw new Error(LEGACY_SESSION_HOOK_ERROR);
 }

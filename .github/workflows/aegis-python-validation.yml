@@ -1,0 +1,40 @@
+name: Aegis Python Validation
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "aegis_py/**"
+      - "tests/**"
+      - "requirements.txt"
+      - "README.md"
+      - ".github/workflows/aegis-python-validation.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "aegis_py/**"
+      - "tests/**"
+      - "requirements.txt"
+      - "README.md"
+      - ".github/workflows/aegis-python-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  python-validation:
+    name: Python Regression Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run canonical Python validation
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest -q tests
