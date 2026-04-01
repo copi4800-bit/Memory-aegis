@@ -99,6 +99,18 @@ class IngestEngine:
         # 3. Semantic Deduplication & Subject Resolution Check (The Fact Slot Lane)
         # We look for a 'Fact Slot' (Subject) rather than just content similarity
         resolved_subject = kwargs.get("subject")
+        
+        # 3.1 EXACT DEDUPLICATION (Early Check to avoid 'ingest_rejected' logs)
+        # We check for exact content/scope/type match before anything else
+        existing_exact = self.storage.fetch_one(
+            "SELECT id FROM memories WHERE content = ? AND scope_id = ? AND scope_type = ? LIMIT 1",
+            (content, scope_id, scope_type)
+        )
+        if existing_exact:
+            mem_id = existing_exact["id"]
+            self.storage.reinforce_memory(mem_id)
+            return self.storage.get_memory(mem_id)
+
         if not resolved_subject and self.search_pipeline:
             from ..retrieval.models import SearchQuery
             # Search for semantic matches to resolve the 'Slot' we are talking about
@@ -130,42 +142,44 @@ class IngestEngine:
             normalized_subject = self.subject_normalizer.normalize(resolved_subject)
             resolved_subject = normalized_subject
             kwargs["subject"] = normalized_subject
-
-            # DETERMINISTIC RULE (Phase 1): If same subject and is_correction, we MUST supersede
-            if metadata.get("is_correction"):
-                # Find all active memories with this exact subject slot and retire them
+            
+        # DETERMINISTIC RULE (Phase 1): If same subject OR explicit old_ids, we MUST supersede
+        if metadata.get("is_correction"):
+            # 1. Handle explicit old_ids from facade or elsewhere
+            explicit_old_ids = metadata.get("corrected_from", [])
+            if isinstance(explicit_old_ids, str):
+                explicit_old_ids = [explicit_old_ids]
+            
+            # 2. Find all active memories with this exact subject slot (if subject resolved)
+            peer_ids = []
+            if resolved_subject:
                 peers = self.storage.fetch_all(
                     """
                     SELECT id FROM memories 
                     WHERE status = 'active' AND scope_type = ? AND scope_id = ? AND subject = ?
                     """,
-                    (scope_type, scope_id, normalized_subject)
+                    (scope_type, scope_id, resolved_subject)
                 )
-                for row in peers:
-                    self.state_machine.transition(
-                        memory_id=row["id"],
-                        to_state="invalidated",
-                        reason="deterministic_fact_correction",
-                        details={"new_memory_content": content[:50]}
-                    )
-                # After retiring peers, we proceed to ingest the new one normally
-            else:
-                # Normal deduplication logic for non-corrections
-                query = SearchQuery(
-                    query=content,
-                    scope_id=scope_id,
-                    scope_type=scope_type,
-                    limit=1,
-                    semantic=True,
-                    include_global=False
+                peer_ids = [row["id"] for row in peers]
+            
+            # Combine both sets of IDs to retire
+            all_ids_to_retire = set(peer_ids) | set(explicit_old_ids)
+            
+            for oid in all_ids_to_retire:
+                self.state_machine.transition(
+                    memory_id=oid,
+                    to_state="invalidated",
+                    reason="deterministic_fact_correction",
+                    details={"new_memory_content": content[:50]}
                 )
-                results = self.search_pipeline.search_with_expansion(query)
-                if results:
-                    top = results[0]
-                    # If it's the exact same content and same subject, it's a duplicate
-                    if top.memory.subject == normalized_subject and self._token_overlap_ratio(content, top.memory.content) > 0.9:
-                        self.storage.reinforce_memory(top.memory.id)
-                        return top.memory
+
+        if (
+            self.search_pipeline
+            and resolved_subject
+            and not metadata.get("is_correction")
+        ):
+            from ..retrieval.models import SearchQuery
+            # Normal deduplication logic for non-corrections
 
         # 3. Classify omitted lane
         if type is None:

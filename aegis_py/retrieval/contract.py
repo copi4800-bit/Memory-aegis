@@ -96,8 +96,15 @@ def derive_trust_shape(
     confidence: float,
     admission_state: str = "validated",
     score_profile: dict[str, float] | None = None,
+    truth_role: str | None = None,
+    governance_status: str | None = None,
 ) -> tuple[str, str]:
     profile = score_profile or {}
+    
+    # v10 Governance overrides
+    if governance_status == "disputed" or truth_role == "contender":
+        return "conflicting", "This memory is one of multiple contenders for the same fact slot and requires review."
+    
     if conflict_status != "none":
         return "conflicting", "This memory is tied to an unresolved conflict."
     if admission_state == "archived":

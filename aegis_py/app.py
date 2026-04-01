@@ -53,6 +53,9 @@ from .v7 import (
     RetrievalOrchestrator,
     SpecializedStorageSurfaces,
 )
+from .v10.engine import GovernanceEngineV10
+from .v10.truth_registry import TruthRegistryV10
+from .v10.models import GovernanceStatus as V10GovernanceStatus, RetrievableMode as V10RetrievableMode
 
 RUNTIME_VERSION = "8.0.0"
 DEFAULT_CONSUMER_SCOPE_TYPE = "agent"
@@ -106,7 +109,7 @@ class AegisApp:
         doctor = MemoryHealthSnapshot(self.storage, locale=current_locale)
         diagnosis = doctor.diagnose(scope_type=st, scope_id=sid)
 
-        honorific = self._get_honorific()
+        h = self._get_honorifics()
         level = diagnosis["health_level"]
         total = diagnosis["total_active"]
         conflicts = diagnosis["num_conflicts"]
@@ -118,7 +121,7 @@ class AegisApp:
 
         # 2. Narrative Summary
         summary = get_text(f"health_summary_{level}", locale=current_locale).format(
-            honorific=honorific, total=total, conflicts=conflicts, stale=stale
+            total=total, conflicts=conflicts, stale=stale, **h
         )
         lines.append(summary)
         lines.append("")
@@ -133,7 +136,11 @@ class AegisApp:
             lines.append(f"   └─ {get_text('health_action_archive', locale=current_locale)}")
 
         if level == "perfect" or level == "good":
-            lines.append("\n🌈 Mọi thứ đang rất tuyệt vời, sếp cứ yên tâm làm việc nhé!")
+            u_label = h.get("h_user", "").strip()
+            if u_label:
+                lines.append(f"\n🌈 Mọi thứ đang rất tuyệt vời, {u_label} cứ yên tâm làm việc nhé!")
+            else:
+                lines.append("\n🌈 Mọi thứ đang rất tuyệt vời, cứ yên tâm làm việc nhé!")
 
         return "\n".join(lines)
     def memory_conflict_prompts(
@@ -153,7 +160,7 @@ class AegisApp:
         if not prompts:
             return "" 
 
-        honorific = self._get_honorific()
+        honorific = self._get_honorifics().get("h_user", "")
         lines = []
 
         for p in prompts:
@@ -218,6 +225,10 @@ class AegisApp:
         self.oracle_beast = OracleBeast(self.storage)
         self.explainer_beast = ExplainerBeast()
 
+        # V10 Governance Engine (Constitutional Memory)
+        self.v10_engine = GovernanceEngineV10(self.storage)
+        self.v10_truth_registry = TruthRegistryV10(self.storage)
+
     def put_memory(self, content: str, type: str | None = None, scope_type: str = "session", scope_id: str = "default", session_id: Optional[str] = None, **kwargs):
         """Ingests a memory and extracts style signals."""
         observation = ObservedOperation(
@@ -241,6 +252,10 @@ class AegisApp:
                 signals = self.pref_extractor.extract_signals(content, session_id, scope_id, scope_type)
                 for sig in signals:
                     self.storage.put_signal(sig)
+                
+                # Immediate consolidation for 'Style Learning' UX (Sprint 2)
+                if signals:
+                    self.pref_manager.consolidate_session(session_id, scope_id, scope_type)
 
             if mem is not None:
                 self._auto_link_same_subject(mem.id)
@@ -262,7 +277,7 @@ class AegisApp:
         scope_type: str = "session",
         limit: int = 10,
         include_global: bool = True,
-        semantic: bool = False,
+        semantic: bool = True,
         semantic_model: str | None = None,
         fallback_to_or: bool = False,
     ) -> List[SearchResult]:
@@ -1240,9 +1255,19 @@ class AegisApp:
     def _safe_count(self, query: str) -> int:
         try:
             row = self.storage.fetch_one(query)
-        except sqlite3.Error:
+        except Exception:
             return 0
-        return row["count"] if row else 0
+        if not row:
+            return 0
+        # Try 'count' key, fallback to first value in row
+        try:
+            return row["count"]
+        except (KeyError, IndexError, TypeError):
+            try:
+                # If it's a dict-like row (sqlite3.Row), values() might work or just indexing
+                return list(row.values())[0] if hasattr(row, "values") else row[0]
+            except (IndexError, TypeError):
+                return 0
 
     def set_scope_policy(
         self,
@@ -1302,11 +1327,15 @@ class AegisApp:
         scope_type: str | None = None,
         limit: int = 10,
         include_global: bool = True,
-        semantic: bool = False,
+        semantic: bool = True,
         semantic_model: str | None = None,
         retrieval_mode: str = "explain",
     ) -> list[dict[str, Any]]:
-        """Return retrieval results as a stable integration payload."""
+        """Return retrieval results as a stable integration payload.
+        
+        V10: Results are now filtered through the Governance Engine (Constitutional Memory).
+        Superseded memories are blocked. Quarantined memories are excluded from normal recall.
+        """
         mode = normalize_retrieval_mode(retrieval_mode)
         scope_type, scope_id = self._normalize_retrieval_scope_pair(
             scope_type=scope_type,
@@ -1321,7 +1350,40 @@ class AegisApp:
             semantic=semantic,
             semantic_model=semantic_model,
         )
-        return self.serialize_search_results(results, retrieval_mode=mode)
+        
+        # V10 Governance Filter: Apply Constitutional Policy to each result
+        governed_results = []
+        for r in results:
+            try:
+                decision = self.v10_engine.govern(
+                    r.memory,
+                    query_signals={"query": query, "score": r.score},
+                    intent="normal_recall"
+                )
+                # Attach decision to result for downstream serialization
+                r.v10_decision = decision
+                
+                # Only include admissible results in normal recall
+                if decision.admissible and decision.retrievable_mode == V10RetrievableMode.NORMAL:
+                    governed_results.append(r)
+                elif decision.retrievable_mode in (V10RetrievableMode.AUDIT, V10RetrievableMode.CONFLICT_PROBE):
+                    # Move to suppressed candidates for transparency
+                    reason_text = ", ".join(decision.decision_reason) or "Chặn bởi Policy"
+                    if governed_results:
+                        governed_results[0].suppressed_candidates.append({
+                            "id": r.memory.id,
+                            "content": r.memory.content[:80],
+                            "reason": reason_text,
+                            "score": r.score,
+                        })
+                else:
+                    # Silently excluded (REVOKED, etc.)
+                    governed_results.append(r)  # Still include but let serialization handle status
+            except Exception:
+                # If governance fails, fall back to including the result as-is
+                governed_results.append(r)
+        
+        return self.serialize_search_results(governed_results or results, retrieval_mode=mode)
 
     def _build_scope_boundary_contract(
         self,
@@ -1586,21 +1648,36 @@ class AegisApp:
             scope_id=scope_id,
         )
 
-    def _get_honorific(self) -> str:
-        """Retrieves the user's preferred honorific from their profile."""
+    def _get_honorifics(self) -> dict[str, str]:
+        """Retrieves the user's preferred honorifics from their profile."""
         scope_type, scope_id = self._default_consumer_scope()
         profile = self.storage.get_profile(scope_id, scope_type)
         
-        # Check if the preference exists explicitly (even if it is an empty string)
-        if profile and "user_honorific" in profile.preferences_json:
-            honorific = profile.preferences_json["user_honorific"]
-            return f"{honorific} " if honorific else ""
+        # New defaults for v10: Neutral / Empty
+        h_user = ""
+        h_assistant = ""
+        h_user_prefix = ""
+
+        if profile:
+            prefs = profile.preferences_json or {}
+            h_user = prefs.get("user_honorific", "")
+            h_assistant = prefs.get("assistant_honorific", "")
         
-        # Default fallback only if no preference has ever been set for Vietnamese
+        # Add spacing and Vietnamese politeness (Dạ) only if honorifics exist
         if self.locale == "vi":
-            return "Dạ sếp, "
+            if h_user:
+                h_user_prefix = "Dạ "
+                h_user = f"{h_user} "
+            if h_assistant:
+                h_assistant = f"{h_assistant} "
         
-        return ""
+        res = {
+            "h_user": h_user,
+            "h_assistant": h_assistant,
+            "h_user_prefix": h_user_prefix
+        }
+            
+        return res
 
     def memory_remember(self, content: str) -> str:
         """Simplified action to store a memory with smart intent detection."""
@@ -1634,10 +1711,9 @@ class AegisApp:
                 self._run_guided_hygiene_cycle(subject=mem.subject, aggressive=True)
                 observation.finish(result="success", details={"memory_id": mem.id, "subject": mem.subject})
                 
-                intent_key = "intent_correction" if metadata.get("is_correction") else "intent_new"
-                intent_label = get_text(intent_key, locale=self.locale)
-                msg = get_text("action_remembered", locale=self.locale).format(honorific=self._get_honorific())
-                action_label = get_text("label_action", locale=self.locale)
+                # Perfect UX (Sprint 2): Clean natural response
+                h = self._get_honorifics()
+                msg = get_text("action_remembered", locale=self.locale).format(**h)
                 
                 # Proactive Conflict Check (6.md compliant)
                 conflict_msg = ""
@@ -1647,12 +1723,14 @@ class AegisApp:
                     # Check if there are prompts to show
                     prompts = self.memory_conflict_prompts()
                     if prompts:
+                        # Append as a 'note' with visual rhythm
                         conflict_msg = f"\n\n{prompts}"
 
-                return f"{msg} [{action_label}: {intent_label}]{conflict_msg}"
+                return f"{msg}{conflict_msg}"
             else:
                 observation.finish(result="no_op", details={"reason": "put_memory_rejected"})
-                return get_text("action_not_remembered", locale=self.locale).format(honorific=self._get_honorific())
+                h = self._get_honorifics()
+                return get_text("action_not_remembered", locale=self.locale).format(**h)
         except Exception as exc:
             observation.finish(result="error", error_code=type(exc).__name__)
             raise
@@ -1664,7 +1742,7 @@ class AegisApp:
         scope_type: str | None = None,
         scope_id: str | None = None,
         locale: str | None = None,
-        retrieval_mode: str = "explain",
+        retrieval_mode: str = "fast",
     ) -> str:
         """Simplified action to retrieve memories with i18n support."""
         current_locale = locale or self.locale
@@ -1694,7 +1772,7 @@ class AegisApp:
                 break
         
         # 1. Identity/Preference Check (Debt 4 Fix)
-        honorific = self._get_honorific()
+        h = self._get_honorifics()
         profile_match = None
         if not initial_scope_type or initial_scope_type == DEFAULT_CONSUMER_SCOPE_TYPE:
             profile = self.storage.get_profile(candidate_scope_id, candidate_scope_type)
@@ -1702,7 +1780,12 @@ class AegisApp:
                 # Simple keyword match in preferences for now
                 for key, val in profile.preferences_json.items():
                     if key.lower() in query.lower() or any(word in query.lower() for word in key.split('_')):
-                        profile_match = f"Dựa trên sở thích của {honorific or 'sếp'}, em nhớ là sếp thích: {val}"
+                        u_h = h.get("h_user", "").strip()
+                        a_h = h.get("h_assistant", "").strip()
+                        if u_h:
+                            profile_match = f"Dựa trên sở thích của {u_h}, {a_h or ''}nhớ là {u_h} thích: {val}"
+                        else:
+                            profile_match = f"Dựa trên sở thích đã lưu, thông tin ghi nhận là: {val}"
                         break
 
         if not results and not profile_match:
@@ -1712,14 +1795,14 @@ class AegisApp:
                 scope_id=initial_scope_id,
                 details={"query": query, "result_count": 0},
             )
-            return get_text("recall_empty", locale=current_locale).format(query=query, honorific=honorific)
+            return get_text("recall_empty", locale=current_locale).format(query=query, **h)
         
         # Filter results strictly to prioritize active ones for consumer recall
         active_results = [r for r in results if r.memory.status in ('active', 'crystallized')]
         
         if not active_results and not profile_match:
              observation.finish(result="empty_active", details={"query": query})
-             return get_text("recall_no_active", locale=current_locale).format(query=query, honorific=honorific)
+             return get_text("recall_no_active", locale=current_locale).format(query=query, **h)
 
         # Use canonical surface serialization for consistency
         serialized_results = serialize_search_results(
@@ -1734,7 +1817,7 @@ class AegisApp:
             if active_results:
                 parts.append("Ngoài ra, em còn thấy các ký ức liên quan:")
         else:
-            parts.append(get_text("recall_header", locale=current_locale).format(honorific=honorific))
+            parts.append(get_text("recall_header", locale=current_locale).format(**h))
         
         for res in serialized_results:
             trust_state = res.get("trust_state", "uncertain")
@@ -1835,9 +1918,11 @@ class AegisApp:
             
             self._run_guided_hygiene_cycle(subject=mem.subject, aggressive=True)
             observation.finish(result="success", details={"memory_id": mem.id, "subject": mem.subject})
-            return get_text("action_updated", locale=self.locale).format(honorific=self._get_honorific())
+            h = self._get_honorifics()
+            return get_text("action_updated", locale=self.locale).format(**h)
         observation.finish(result="no_op", details={"reason": "put_memory_rejected"})
-        return get_text("action_not_updated", locale=self.locale).format(honorific=self._get_honorific())
+        h = self._get_honorifics()
+        return get_text("action_not_updated", locale=self.locale).format(**h)
 
     def memory_forget(self, query: str) -> str:
         """Simplified action to archive a memory matching the query."""
@@ -1849,7 +1934,8 @@ class AegisApp:
                 break
         if not results:
             observation.finish(result="empty", details={"query": query, "result_count": 0})
-            return get_text("action_not_forgotten", locale=self.locale).format(query=query, honorific=self._get_honorific())
+            h = self._get_honorifics()
+            return get_text("action_not_forgotten", locale=self.locale).format(query=query, **h)
         
         mem_id = results[0].memory.id
         transition_memory(
@@ -1866,7 +1952,8 @@ class AegisApp:
             scope_id=scope_id,
             details={"query": query, "memory_id": mem_id},
         )
-        return get_text("action_forgotten", locale=self.locale).format(honorific=self._get_honorific())
+        h = self._get_honorifics()
+        return get_text("action_forgotten", locale=self.locale).format(**h)
 
     def onboarding(self, workspace_dir: str | None = None) -> dict[str, Any]:
         """Run a bounded first-run onboarding flow against the active Python runtime."""

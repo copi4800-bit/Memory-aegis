@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aegis-v10"
+version = "10.0.0"
+description = "Aegis v10: The Governance-First Memory Engine"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "antigravity", email = "antigravity@google.com"}
+]
+dependencies = [
+    "pydantic>=2.0.0",
+    "aiosqlite",
+    "fastmcp"
+]
+
+[project.scripts]
+aegis-mcp = "aegis_py.mcp.server:main"
+aegis-check = "aegis_py.install_check:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["aegis_py*"]

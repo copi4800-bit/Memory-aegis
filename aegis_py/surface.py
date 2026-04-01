@@ -143,10 +143,11 @@ def serialize_search_result(
     v9_trace = getattr(result, "v9_trace", None)
     v9_payload = {}
     if v9_trace:
-        # Determine narrative detail level based on mode
+        # Determine narrative detail level based on mode (Absolute Beauty Sprint 1 & 3)
         detail_level = "standard"
-        if mode == "fast": detail_level = "compact"
-        elif mode == "explain": detail_level = "deep" # In explain mode, we provide audit details
+        if mode == "fast": detail_level = "standard" # User mode
+        elif mode == "explain": detail_level = "explain" # Explain mode
+        elif mode == "deep": detail_level = "deep" # Audit mode
         
         human_reason = V9_RENDERER.render(v9_trace, locale=locale, detail=detail_level)
         v9_payload = {
@@ -160,6 +161,18 @@ def serialize_search_result(
         }
     else:
         human_reason = generate_human_reason(v8_state, locale=locale)
+
+    # v10 Governance Extension
+    v10_decision = getattr(result, "v10_decision", None)
+    v10_payload = {}
+    if v10_decision:
+        v10_payload = {
+            "truth_role": v10_decision.truth_role.value,
+            "governance_status": v10_decision.governance_status.value,
+            "policy_trace": v10_decision.policy_trace,
+            "admissible": v10_decision.admissible,
+            "decision_reason": v10_decision.decision_reason
+        }
 
     payload = {
         "memory": {
@@ -182,9 +195,13 @@ def serialize_search_result(
         "conflict_status": result.conflict_status,
         "human_reason": human_reason,
         "v9_audit": v9_payload, # Audit-friendly v9 trace
+        "v10_governance": v10_payload, # v10 Governance fields
         "unified_signals": unify_v8_signals(v8_state, locale=locale),
         "suppressed_candidates": result.suppressed_candidates, # Thêm Why-not payload
     }
+    # Flatten v10 fields into the top-level payload for easy consumption if in v10 mode
+    if v10_payload:
+        payload.update(v10_payload)
     if mode == "fast":
         payload["result_mode"] = "fast"
         return payload

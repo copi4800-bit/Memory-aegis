@@ -829,7 +829,7 @@ class StorageManager:
 
     def _embed_text(self, text: str) -> dict[str, float]:
         tokens = re.findall(r"\w+", text.lower(), flags=re.UNICODE)
-        filtered = [token for token in tokens if len(token) > 2]
+        filtered = [token for token in tokens if len(token) >= 1]
         if not filtered:
             return {}
         counts: dict[str, float] = {}

@@ -54,4 +54,55 @@ class SignalExtractor:
                 signal_value=1.0
             ))
             
+        # 4. Vietnamese Honorifics (xưng hô)
+        signals.extend(self.extract_honorifics(content, session_id, scope_id, scope_type))
+            
         return signals
+
+    def extract_honorifics(self, content: str, session_id: str, scope_id: str, scope_type: str) -> List[StyleSignal]:
+        """
+        Detects persona identity (honorifics) from explicit user assignment.
+        Follows a Zero-Locking strategy: no hardcoded lists of pronouns or verbs.
+        """
+        signals = []
+        low_content = content.lower()
+        
+        # 1. Explicit Identification: "Gọi [X] là [Y]" 
+        # Captures the identity 'Y' specifically as the user's preferred label.
+        match = re.search(r"gọi\s+.+?\s+là\s+([\w\s]+)", low_content)
+        if match:
+            val = match.group(1).split()[0] # Take first word of the label
+            signals.append(StyleSignal(
+                id=f"sig_uh_{session_id[:6]}_{val}",
+                session_id=session_id,
+                scope_id=scope_id,
+                scope_type=scope_type,
+                signal_key="user_honorific",
+                signal_value=val
+            ))
+
+        # 2. Explicit Identity: "Xưng là [Y]"
+        # Captures how the user wants the assistant to refer to itself.
+        match = re.search(r"xưng\s+là\s+([\w\s]+)", low_content)
+        if match:
+            val = match.group(1).split()[0]
+            signals.append(StyleSignal(
+                id=f"sig_ah_{session_id[:6]}_{val}",
+                session_id=session_id,
+                scope_id=scope_id,
+                scope_type=scope_type,
+                signal_key="assistant_honorific",
+                signal_value=val
+            ))
+            
+        return signals
+
+    def _make_assistant_signal(self, val: str, sid: str, scid: str, sct: str) -> StyleSignal:
+        return StyleSignal(
+            id=f"sig_ah_{sid[:6]}_{val}",
+            session_id=sid,
+            scope_id=scid,
+            scope_type=sct,
+            signal_key="assistant_honorific",
+            signal_value=val
+        )

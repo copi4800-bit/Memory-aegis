@@ -43,11 +43,55 @@ class ResidualScorer:
         final_score = self.apply_hard_constraints(memory, pre_constraint_score, intent, trace)
         
         trace.factors["final_score"] = final_score
+
+        # 5.5 Metadata for Rendering (Patch C)
+        meta = memory.metadata or {}
+        trace.is_correction_event = (
+            meta.get("is_correction", False) or 
+            len(meta.get("corrected_from", [])) > 0 or
+            (memory.correction.is_slot_winner and memory.correction.supersession_depth > 0)
+        )
+        trace.is_first_write = (
+            not trace.is_correction_event and 
+            memory.correction.is_slot_winner and 
+            memory.correction.supersession_depth == 0
+        )
         
-        # 6. Determine Decisive Factor
+        # 6. Advanced V10 Metrics: Entropy and Health
+        trace.factors["entropy"] = self.calculate_decision_entropy(memory, trace)
+        trace.factors["mhi"] = self.calculate_memory_health_index(memory, trace)
+        
+        # 7. Determine Decisive Factor
         self._determine_decisive_factor(trace)
         
         return trace
+
+    def calculate_decision_entropy(self, m: MemoryRecordV9, trace: JudgmentTrace) -> float:
+        """
+        Computes Decision Entropy (H_slot). 
+        High entropy means the system is uncertain about this memory's truth role.
+        """
+        # Simplified entropy based on conflict and evidence gap
+        conflict_energy = m.conflict.unresolved_contradiction * 2.0
+        evidence_gap = 1.0 - m.trust.evidence_strength
+        
+        # Normalized entropy [0, 1]
+        raw_h = (conflict_energy * 0.6 + evidence_gap * 0.4)
+        return max(0.0, min(1.0, raw_h))
+
+    def calculate_memory_health_index(self, m: MemoryRecordV9, trace: JudgmentTrace) -> float:
+        """
+        Computes Memory Health Index (MHI).
+        MHI = w1*T + w2*L + w3*V - w4*C - w5*Q
+        """
+        t = m.trust.trust_score
+        l = trace.factors.get("life_final", 0.0)
+        v = m.trust.evidence_strength
+        c = m.conflict.unresolved_contradiction
+        q = 1.0 if m.conflict.open_conflict_count > 0 else 0.0
+        
+        mhi = (0.3 * t + 0.2 * l + 0.3 * v - 0.1 * c - 0.1 * q)
+        return max(0.0, min(1.0, mhi))
 
     def compute_base_score(self, m: MemoryRecordV9, q: Dict[str, float], trace: JudgmentTrace) -> float:
         w = self.config["base"]

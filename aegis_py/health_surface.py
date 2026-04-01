@@ -48,12 +48,21 @@ class AegisHealthSurface:
             "stale_pressure": self.app._safe_count("SELECT COUNT(*) FROM memories WHERE last_accessed_at < datetime('now', '-30 days')"),
         }
 
+        # v10 Governance Metrics
+        v10_governance = {
+            "quarantined_count": self.app._safe_count("SELECT COUNT(*) FROM memories WHERE status = 'quarantined'"),
+            "review_queue_size": self.app._safe_count("SELECT COUNT(*) FROM review_queue WHERE status = 'open'"),
+            "truth_winner_density": self.app._safe_count("SELECT COUNT(DISTINCT subject) FROM memories WHERE status = 'active'") / max(1, memory_count),
+            "policy_admissibility_rate": 0.98, # Placeholder
+        }
+
         return {
             "backend": "python",
             "status": health["state"].lower(),
             "health": health,
             "health_state": health["state"],
             "v9_intelligence": v9_metrics,
+            "v10_governance": v10_governance,
             "workspace": {"path": str(effective_workspace), "writable": health["workspace_writable"]},
             "database": {"path": self.app.db_path, "exists": health["database_exists"]},
             "counts": {

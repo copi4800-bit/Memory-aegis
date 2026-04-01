@@ -59,7 +59,7 @@ def map_to_v9_record(
     # 3. Map Correction Signals
     # If it's 'active' AND explicitly marked or has high metadata confidence, it's a winner
     # We avoid treating EVERY active record as a winner to prevent flashy-bias
-    is_winner = (memory.status == "active") and (memory.metadata or {}).get("is_winner", True)
+    is_winner = (memory.status == "active") and (memory.metadata or {}).get("is_winner", False)
     is_superseded = (memory.status == "superseded")
     
     # Freshness calculation (Age in days normalized)

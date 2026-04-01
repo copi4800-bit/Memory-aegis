@@ -65,6 +65,10 @@ class JudgmentTrace:
     hard_constraints_delta: float = 0.0
     factors: Dict[str, float] = field(default_factory=dict)
     decisive_factor: str = "relevance"
+    
+    # Metadata for better human rendering (v10)
+    is_correction_event: bool = False
+    is_first_write: bool = False
 
 @dataclass
 class MemoryRecordV9:

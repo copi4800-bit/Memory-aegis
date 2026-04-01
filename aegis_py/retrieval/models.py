@@ -42,6 +42,12 @@ class SearchResult:
     @property
     def trust_state(self) -> str:
         score_profile = self.memory.metadata.get("score_profile", {}) if isinstance(self.memory.metadata, dict) else {}
+        
+        # v10 Governance context
+        v10_dec = getattr(self, "v10_decision", None)
+        truth_role = v10_dec.truth_role.value if v10_dec else None
+        gov_status = v10_dec.governance_status.value if v10_dec else None
+        
         state, _ = derive_trust_shape(
             score=self.score,
             conflict_status=self.conflict_status,
@@ -50,12 +56,20 @@ class SearchResult:
             confidence=self.memory.confidence,
             admission_state=self.admission_state,
             score_profile=score_profile,
+            truth_role=truth_role,
+            governance_status=gov_status,
         )
         return state
 
     @property
     def trust_reason(self) -> str:
         score_profile = self.memory.metadata.get("score_profile", {}) if isinstance(self.memory.metadata, dict) else {}
+        
+        # v10 Governance context
+        v10_dec = getattr(self, "v10_decision", None)
+        truth_role = v10_dec.truth_role.value if v10_dec else None
+        gov_status = v10_dec.governance_status.value if v10_dec else None
+
         _, reason = derive_trust_shape(
             score=self.score,
             conflict_status=self.conflict_status,
@@ -64,6 +78,8 @@ class SearchResult:
             confidence=self.memory.confidence,
             admission_state=self.admission_state,
             score_profile=score_profile,
+            truth_role=truth_role,
+            governance_status=gov_status,
         )
         return reason
 

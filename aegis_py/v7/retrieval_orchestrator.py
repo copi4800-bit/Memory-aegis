@@ -61,27 +61,16 @@ class RetrievalOrchestrator:
             include_global=query.include_global,
             limit=query.limit,
         )
-        results: list[SearchResult] = []
-        for row in rows:
-            memory = self.storage.get_memory(row["memory_id"])
-            if memory is None:
-                continue
-            similarity = float(row["vector_similarity"])
-            results.append(
-                SearchResult(
-                    memory=memory,
-                    score=round((similarity * 0.75) + (float(memory.activation_score or 0.0) * 0.25), 6),
-                    reasons=["vector_store_match", f"vector_similarity:{similarity:.3f}"],
-                    source_kind=memory.source_kind,
-                    source_ref=memory.source_ref,
-                    scope_type=memory.scope_type,
-                    scope_id=memory.scope_id,
-                    conflict_status="none",
-                    admission_state=(memory.memory_state or memory.admission_state or "validated"),
-                    retrieval_stage="vector",
-                )
-            )
-        return results
+        
+        # Use SearchPipeline to materialize and GOVERN the vector results
+        # This ensures v9 scoring and v10 governance are applied consistently
+        return self.search_pipeline._materialize_results(
+            rows, # raw_candidates
+            min_score=query.min_score,
+            limit=query.limit,
+            query_text=query.query,
+            query_obj=query
+        )
 
     def _state_for(self, result: SearchResult) -> str:
         return getattr(result.memory, "memory_state", None) or result.admission_state
