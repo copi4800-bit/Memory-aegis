@@ -104,7 +104,7 @@ aegis_py/
 │   ├── review.py           # Priority-based review queue
 │   ├── events.py           # Governance audit trail
 │   └── models.py           # DecisionObject, GovernanceStatus, TruthRole
-├── v9/                     # Residual Judgment Engine (math scoring core)
+├── v10_scoring/            # Residual Judgment Engine (math scoring core)
 ├── facade.py               # Zero-config API: remember/recall/correct/status
 ├── app.py                  # Main orchestrator (2500+ lines)
 ├── preferences/            # Zero-Locking identity extractor
@@ -130,7 +130,7 @@ python3 scripts/v10_gauntlet_test.py
 python3 scripts/super_stress_v10.py
 
 # V10 Extreme Gauntlet (5000+ noise memories)
-python3 scripts/v9_extreme_gauntlet.py
+python3 scripts/v10_extreme_gauntlet.py
 ```
 
 ---
