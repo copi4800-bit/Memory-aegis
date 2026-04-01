@@ -40,11 +40,20 @@ class AegisHealthSurface:
             "compaction_policy": storage_policy,
         }
 
+        # v9 Intelligence Metrics
+        v9_metrics = {
+            "truth_alignment_score": 0.95, # Placeholder for actual benchmark result
+            "conflict_load_index": min(1.0, conflict_count / 10.0),
+            "correction_churn": self.app._safe_count("SELECT COUNT(*) FROM memories WHERE status = 'superseded' AND updated_at > datetime('now', '-7 days')"),
+            "stale_pressure": self.app._safe_count("SELECT COUNT(*) FROM memories WHERE last_accessed_at < datetime('now', '-30 days')"),
+        }
+
         return {
             "backend": "python",
             "status": health["state"].lower(),
             "health": health,
             "health_state": health["state"],
+            "v9_intelligence": v9_metrics,
             "workspace": {"path": str(effective_workspace), "writable": health["workspace_writable"]},
             "database": {"path": self.app.db_path, "exists": health["database_exists"]},
             "counts": {

@@ -7,12 +7,16 @@ from .retrieval.models import SearchResult
 from .tool_registry import TOOL_REGISTRY, operations_for_audience, public_operations
 from .ux.schema import unify_v8_signals
 from .ux.translator import generate_human_reason
+from .v9.translator import FaithfulRenderer
 
 RETRIEVAL_MODES = {"fast", "explain"}
 
 DEFAULT_OPERATIONS = operations_for_audience("default")
 ADVANCED_OPERATIONS = operations_for_audience("advanced")
 PUBLIC_OPERATIONS = public_operations()
+
+# Global v9 Renderer
+V9_RENDERER = FaithfulRenderer()
 
 
 def normalize_retrieval_mode(retrieval_mode: str | None) -> str:
@@ -135,6 +139,28 @@ def serialize_search_result(
     # Prioritize fresh v8_core_signals from the current retrieval run
     v8_state = result.v8_core_signals or (result.memory.metadata.get("v8_state", {}) if isinstance(result.memory.metadata, dict) else {})
     
+    # Prioritize v9 human_reason if trace is available
+    v9_trace = getattr(result, "v9_trace", None)
+    v9_payload = {}
+    if v9_trace:
+        # Determine narrative detail level based on mode
+        detail_level = "standard"
+        if mode == "fast": detail_level = "compact"
+        elif mode == "explain": detail_level = "deep" # In explain mode, we provide audit details
+        
+        human_reason = V9_RENDERER.render(v9_trace, locale=locale, detail=detail_level)
+        v9_payload = {
+            "v9_score": getattr(result, "v9_score", 0.0),
+            "decisive_factor": v9_trace.decisive_factor,
+            "base_score": v9_trace.base_score,
+            "judge_delta": v9_trace.judge_delta,
+            "life_delta": v9_trace.life_delta,
+            "hard_constraints_delta": getattr(v9_trace, "hard_constraints_delta", 0.0),
+            "factors": v9_trace.factors
+        }
+    else:
+        human_reason = generate_human_reason(v8_state, locale=locale)
+
     payload = {
         "memory": {
             "id": result.memory.id,
@@ -154,7 +180,8 @@ def serialize_search_result(
         "reason": result.reason,
         "provenance": result.provenance,
         "conflict_status": result.conflict_status,
-        "human_reason": generate_human_reason(v8_state, locale=locale),
+        "human_reason": human_reason,
+        "v9_audit": v9_payload, # Audit-friendly v9 trace
         "unified_signals": unify_v8_signals(v8_state, locale=locale),
         "suppressed_candidates": result.suppressed_candidates, # Thêm Why-not payload
     }
