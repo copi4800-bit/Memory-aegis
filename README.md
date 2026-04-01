@@ -1,45 +1,42 @@
-# Memory Aegis v8 (Pure Python)
+# Memory Aegis v9 (The Fortress Edition)
 
-Local-first, human-centric memory engine for OpenClaw and MCP-based agents.
+**Mathematical Truth-Alignment & Residual Judgment Engine for AI Agents.**
 
 ## Product Overview
+Aegis v9 is a revolutionary leap from search to **Judgment**. It is a pure Python-centric memory engine designed to eliminate hallucination, resolve complex contradictions, and guarantee that your agent always operates on the "Current Truth."
 
-Aegis v8 is a complete evolution of the memory engine, now running on a pure Python-centric architecture. It is designed for agents that need memory to stay useful, scoped, and trustworthy over time, while maintaining a deeply personalized user experience.
+## 🚀 Key v9 "Fortress" Enhancements:
 
-### Key v8 Enhancements:
-- **Personalized Identity:** Assistants address you by your preferred honorific (Sếp, Anh, Chị...).
-- **Human-Centric Conflict Resolution:** Interactive dialogue prompts to resolve contradictions between memories using simple 1/2 choices.
-- **Explainable Trust:** Every memory recalled comes with a clear "Human Reason" explaining why it was selected.
-- **Actionable Health Reports:** A "Memory Doctor" surface that provides polite, supportive maintenance advice.
-- **Deterministic Correction:** Smart intent detection ensuring old facts are superseded seamlessly.
+*   **Residual Judgment Engine**: Uses a multi-tier mathematical formula (`S_final = S_base + Δ_judge + Δ_life + H_constraints`) to prioritize truth over keywords.
+*   **Zero-Trust Fortress**: Features a **Nuclear Penalty (-15.0)** that automatically neutralizes low-trust or unverified information, making the system immune to "flashy" noise.
+*   **Faithful Explanations**: Every result comes with a human-centric narrative and a deep mathematical audit trace, explaining exactly why it outranked other candidates.
+*   **Correction-First Architecture**: Naturally handles deep correction chains, ensuring that new facts instantly supersede outdated ones without manual intervention.
+*   **Conflict Storm Resilience**: Identifies and penalizes unresolved contradictions at the architectural level to ensure safe-fail operation.
 
-## Why Aegis v8?
+## Why Aegis v9?
+Aegis v9 moves beyond simple database lookups. It treats memory as a dynamic field:
+*   **Crystallization**: Important, repeated facts gain stability.
+*   **Exponential Decay**: Stale, unverified data fades away automatically to reduce cognitive noise.
+*   **Truth-Alignment**: Uses evidence events and phả hệ (lineage) to differentiate between "noise" and "verity."
 
-Aegis v8 isn't just a database; it's a "Cognitive Beast" system that mimics human memory patterns:
-- **Crystallization:** Memories you repeat become stronger and more stable.
-- **Decay:** Stale, unused information fades away to reduce noise.
-- **Self-Healing:** Automatically repairs broken links and identifies contradictions.
-
-## Installation
-
+## 🛠 Installation & Quick Start
 ### Requirements:
-- Python 3.10+
-- SQLite (FTS5 enabled)
+*   Python 3.10+
+*   SQLite (FTS5 enabled)
 
-### Quick Start:
-1. Clone the repository.
-2. Run `pip install -r requirements.txt`.
-3. Integrated directly into OpenClaw via the Python tool adapter.
+### Setup:
+1.  Clone the repository.
+2.  `pip install -r requirements.txt`
+3.  `export PYTHONPATH=.`
+4.  Run the gauntlet to verify the fortress:
+    `python3 scripts/v9_extreme_gauntlet.py --noise-memories 1000`
 
-## Architecture
-
-The v8 runtime is organized into six core modules:
-- `memory`: Ingest and smart intent detection.
-- `retrieval`: Scoped search with semantic expansion.
-- `hygiene`: Decay, crystallization, and maintenance.
-- `profiles`: Identity and personalized preferences.
-- `storage`: High-performance SQLite persistence.
-- `conflict`: Interactive contradiction management.
+## 🧱 Architecture
+The v9 runtime is organized into specialized judgment modules:
+*   **v9 Scorer**: The mathematical brain (`aegis_py/v9/scorer.py`).
+*   **v9 Adapter**: Data-to-signal mapper (`aegis_py/v9/adapter.py`).
+*   **Retrieval**: Rerank-before-filter pipeline (`aegis_py/retrieval/search.py`).
+*   **Surface**: Faithful explanation and audit layer (`aegis_py/surface.py`).
 
 ---
-Built for reliability, designed for trust. Aegis v8 — The brain of your agent.
+*Built for absolute reliability. Designed for the Truth. Aegis v9 — The conscience of your agent.*

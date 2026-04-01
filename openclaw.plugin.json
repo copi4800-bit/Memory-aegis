@@ -1,9 +1,9 @@
 {
-  "id": "memory-aegis-v8",
-  "name": "Memory Aegis v8",
-  "description": "Local-first memory engine for OpenClaw — smart recall, automatic maintenance, conflict detection, and guided setup. No cloud required.",
+  "id": "memory-aegis-v9",
+  "name": "Memory Aegis v9",
+  "description": "Mathematical truth-alignment and judgment engine for AI agents. Features Residual Judgment Engine and Zero-Trust Fortress.",
   "kind": "memory",
-  "version": "8.0.0",
+  "version": "9.0.0",
   "healthContract": {
     "states": ["HEALTHY", "DEGRADED_SYNC", "BROKEN"],
     "capabilities": ["local_store", "local_search", "local_status", "backup_restore", "optional_sync"],

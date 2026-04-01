@@ -1,6 +1,6 @@
-# Aegis Python - GSD + Spec Kit Project
+# Memory Aegis v9 (The Fortress Edition)
 
-Self-evolving memory system for AI agents.
+Mathematical truth-alignment and judgment engine for AI agents.
 
 ## Build & Run
 - Setup: `pip install -r requirements.txt`
