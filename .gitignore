@@ -19,3 +19,14 @@ __pycache__/
 .tmp_*/
 tmp_*/
 stress-legacy-dbs/
+.planning/
+.codex/
+.specify/
+.aegis_py/
+aegis_py/specs/
+specs/
+Aegis_V10_FULL_GUIDE.md
+Aegis_v10_full_guide.md
+AEGIS_V10_FULL_GUIDE.md
+AGENTS.md
+CLAUDE.md

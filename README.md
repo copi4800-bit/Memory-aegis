@@ -1,254 +1,145 @@
-# Memory Aegis v10 — The Constitutional Memory Engine 🛡️
+# Memory Aegis
 
-**A Governance-First memory engine for AI agents. Truth over Score. Policy over Guesswork.**
+Truth-aware memory for AI agents.
 
-Aegis v10 is a long-term memory system that enforces truth through a **5-tier Constitutional Policy pipeline (C0-C4)**. Every memory must pass through hard governance rules before it can be returned to the user, ensuring absolute accuracy and zero hallucination leakage.
+Memory Aegis is a local-first memory engine that does more than store and retrieve notes. It keeps track of which fact is current, which fact was superseded, why a result was selected, and why competing memories were suppressed.
 
----
+The core idea is simple:
 
-## 🚀 Key Features
+- retrieval should not be the final decision
+- memory should protect current truth
+- every important result should be explainable
 
-### ⚖️ Constitutional Governance (C0-C4)
-Every retrieval result is filtered through 5 precedence layers:
+## Why It Is Different
 
-| Level | Name | Function |
-|---|---|---|
-| **C0** | System Safety | Block harmful or illegal content |
-| **C1** | User Override | User corrections always take priority |
-| **C2** | Canonical Truth | Hard-exclude superseded facts, protect slot winners |
-| **C3** | Governance Risk | Quarantine high-conflict memories, budget pressure escalation |
-| **C4** | Soft Judgment | Filter low-relevance results |
+Most memory systems stop at search and ranking.
 
-### 🧠 Residual Judgment Engine
-Mathematical scoring core with a four-tier residual formula:
-```
-S_final = S_base + Δ_judge + Δ_life + H_constraints
-```
-- **Base**: Initial semantic/lexical recall signal
-- **Judge**: Truth alignment, evidence strength, conflict penalties
-- **Life**: Temporal decay and habit-based readiness
-- **Constraints**: Hard floors for superseded/archived records
+Memory Aegis adds a governed decision layer on top:
 
-### 🔐 Truth Registry
-Manages fact ownership with margin-aware winner selection:
-- **Winner**: The current truth. Always returned. Protected by `C2_SLOT_WINNER_PROTECTION`.
-- **Contender**: Competing fact pending review. Surfaces only in audit mode.
-- **Superseded**: Old truth. Hard-excluded from normal recall.
+- `winner / contender / superseded` truth handling
+- correction-first recall
+- `why this` and `why not` explanations
+- evidence and governance traces
+- long-horizon hygiene and retention checks
 
-### 🗣️ Zero-Locking Identity
-No hardcoded pronouns or persona labels. The system learns persona exclusively from explicit user commands and adapts immediately.
+This makes it useful for agent systems that need memory to stay correct over time, not just relevant in the moment.
 
-### 🩺 Health Diagnostics
-Built-in memory health monitoring with 4 severity levels, conflict detection, staleness tracking, and actionable remediation guidance.
+## What It Can Do
 
-### 📝 Explainable Results
-Every result includes a human-readable reason, policy trace, trust state, and suppressed candidates with "why-not" explanations for full transparency.
+- Store memories by scope and type
+- Recall memories through lexical + semantic retrieval
+- Protect corrected facts from stale fact leakage
+- Surface the selected truth with explanation and suppressed candidates
+- Run spotlight, benchmark, gate, and gauntlet flows
+- Simulate long-horizon survival and DB hygiene behavior
 
----
+## Quick Start
 
-## 🛠 Installation
-
-### Requirements
-- Python 3.11+
-- SQLite with FTS5
-
-### Option 1: NPM (recommended for OpenClaw)
 ```bash
-git clone https://github.com/copi4800-bit/Memory-aegis.git
-cd Memory-aegis
 npm install
 ```
 
-### Option 2: Shell Script
-```bash
-git clone https://github.com/copi4800-bit/Memory-aegis.git
-cd Memory-aegis
-bash install.sh
-```
+Or:
 
-### Option 3: Pip (for developers)
 ```bash
-git clone https://github.com/copi4800-bit/Memory-aegis.git
-cd Memory-aegis
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 ```
 
----
-
-## 🔌 OpenClaw Integration
-
-Add to your `config.json`:
-```json
-{
-  "mcpServers": {
-    "aegis": {
-      "command": "/path/to/Memory-aegis/.venv/bin/python",
-      "args": ["/path/to/Memory-aegis/aegis_py/mcp/server.py"],
-      "env": { "PYTHONPATH": "/path/to/Memory-aegis" }
-    }
-  }
-}
-```
-
----
-
-## 🧱 Architecture
-
-```
-aegis_py/
-├── v10/                    # Constitutional Governance Engine
-│   ├── engine.py           # govern(): Score → Rules → Constitution → Review
-│   ├── policy.py           # MemoryConstitution (C0-C4)
-│   ├── truth_registry.py   # Winner/Contender/Loser slot management
-│   ├── review.py           # Priority-based review queue
-│   ├── events.py           # Governance audit trail
-│   └── models.py           # DecisionObject, GovernanceStatus, TruthRole
-├── v10_scoring/            # Residual Judgment Engine (math scoring core)
-├── facade.py               # Zero-config API: remember/recall/correct/status
-├── app.py                  # Main orchestrator (2500+ lines)
-├── preferences/            # Zero-Locking identity extractor
-├── ux/                     # i18n, Health diagnostics
-├── storage/                # SQLite + FTS5 + Evidence + Graph
-├── mcp/                    # 40+ MCP Tools
-├── retrieval/              # Search pipeline + Spreading activation
-├── conflict/               # Conflict detection & resolution
-└── hygiene/                # Maintenance & state machine
-```
-
----
-
-## 🧪 Stress Testing
+Run the MCP server:
 
 ```bash
-export PYTHONPATH=.
-
-# V10 Constitutional Gauntlet
-python3 scripts/v10_gauntlet_test.py
-
-# V10 Super Stress
-python3 scripts/super_stress_v10.py
-
-# V10 Extreme Gauntlet (5000+ noise memories)
-python3 scripts/v10_extreme_gauntlet.py
+export PYTHONPATH=$PYTHONPATH:.
+python3 aegis_py/mcp/server.py
 ```
 
----
-
-## 🎯 Core Spotlight
-
-Want to see Aegis' strongest differentiator quickly?
-
-Run:
+Run the test suite:
 
 ```bash
-export PYTHONPATH=.
+export PYTHONPATH=$PYTHONPATH:.
+python3 -m pytest tests
+```
+
+## Best Demos
+
+Core spotlight:
+
+```bash
+export PYTHONPATH=$PYTHONPATH:.
 python3 scripts/demo_core_spotlight.py
 ```
 
-This spotlight demo shows one old fact, one correction, one query, and the governed result:
-
-- selected current truth
-- human-readable explanation
-- governance/truth state
-- why-not output for the older fact
-
-To see the same spotlight idea on competing contenders, run:
+Conflict spotlight:
 
 ```bash
-export PYTHONPATH=.
+export PYTHONPATH=$PYTHONPATH:.
 python3 scripts/demo_conflict_spotlight.py
 ```
 
-To measure the same advantage with deterministic fixtures, run:
+Full-core showcase:
 
 ```bash
-export PYTHONPATH=.
-python3 scripts/benchmark_truth_spotlight.py
-```
-
-To enforce the governed pass/fail bar for that artifact:
-
-```bash
-python3 scripts/check_truth_spotlight_gate.py
-```
-
-To render a readable report from the same artifact:
-
-```bash
-python3 scripts/render_truth_spotlight_report.py
-```
-
-If `.planning/benchmarks/truth_spotlight_summary.before.json` exists, the report also includes a historical trend section against that prior artifact.
-
-To bundle the current summary, report, and gate status into one manifest:
-
-```bash
-python3 scripts/bundle_truth_release_evidence.py
-```
-
-To run the broader Aegis gauntlet across core truth, scale, adversarial, and product-readiness checks:
-
-```bash
-python3 scripts/aegis_gauntlet.py
-```
-
-To diagnose whether repetitive write pressure is landing as exact deduplication or admission-policy blocks:
-
-```bash
-python3 scripts/diagnose_ingest_pressure.py
-```
-
-To decide whether the current admission policy is healthy enough to close the write-path investigation for the current deployment class:
-
-```bash
-python3 scripts/check_ingest_policy_readiness.py
-```
-
-To render one full-core Aegis experience that shows selected truth, why-this, why-not, evidence, governance, signals, graph context, and scope health in one place:
-
-```bash
+export PYTHONPATH=$PYTHONPATH:.
 python3 scripts/demo_core_showcase.py
 ```
 
-To generate the same story as a polished local HTML report:
+Polished HTML report:
 
 ```bash
+export PYTHONPATH=$PYTHONPATH:.
 python3 scripts/render_core_showcase_html.py
 ```
 
-To compare a previous benchmark artifact with the current one:
+## Validation
+
+Truth spotlight benchmark:
 
 ```bash
-export PYTHONPATH=.
-python3 scripts/compare_truth_spotlight.py path/to/older_summary.json
+export PYTHONPATH=$PYTHONPATH:.
+python3 scripts/benchmark_truth_spotlight.py
+python3 scripts/check_truth_spotlight_gate.py
+python3 scripts/render_truth_spotlight_report.py
 ```
 
-For the short written version of that story, see [docs/WHY_AEGIS_CORE_WINS.md](docs/WHY_AEGIS_CORE_WINS.md).
+Broader gauntlet:
 
----
+```bash
+export PYTHONPATH=$PYTHONPATH:.
+python3 scripts/aegis_gauntlet.py
+```
 
-## 📋 MCP Tools (40+)
+Long-horizon survival:
 
-### Consumer Tools
-| Tool | Description |
-|---|---|
-| `memory_remember` | Store information into long-term memory |
-| `memory_recall` | Retrieve memories related to a query |
-| `memory_correct` | Correct or update existing information |
-| `memory_forget` | Remove information from memory |
-| `memory_stats` | View memory status and health |
-| `memory_profile` | See what Aegis remembers about you |
+```bash
+export PYTHONPATH=$PYTHONPATH:.
+python3 scripts/long_horizon_memory_survival.py
+```
 
-### Advanced Tools
-`memory_spotlight`, `memory_governance`, `memory_doctor`, `memory_scan`, `memory_visualize`, `memory_backup_*`, `memory_sync_*`, `memory_background_*`, `memory_vector_inspect`, `memory_evidence_artifacts`, `memory_storage_*`, and more.
+This verifies that:
 
----
+- current truth survives after simulated long horizons
+- stale archived and superseded rows are cleaned up
+- dormant semantic memory does not grow forever without pressure
 
-## 📜 License
+## Public Repo Layout
+
+```text
+aegis_py/     runtime, storage, retrieval, governance, MCP
+scripts/      demos, benchmarks, gates, gauntlets
+tests/        regression and stress validation
+docs/         short public-facing explanation docs
+```
+
+## Important Files
+
+- `aegis_py/app.py`
+- `aegis_py/core_showcase_surface.py`
+- `aegis_py/spotlight_surface.py`
+- `scripts/aegis_gauntlet.py`
+- `scripts/long_horizon_memory_survival.py`
+- `docs/WHY_AEGIS_CORE_WINS.md`
+
+## License
 
 MIT
-
----
-
-*Built for absolute trust. Aegis v10 — The Constitution for AI Memory.* 🛡️
