@@ -5,7 +5,9 @@ on:
     branches: [main, develop]
     paths:
       - "aegis_py/**"
+      - "scripts/**"
       - "tests/**"
+      - "docs/**"
       - "requirements.txt"
       - "README.md"
       - ".github/workflows/aegis-python-validation.yml"
@@ -13,7 +15,9 @@ on:
     branches: [main]
     paths:
       - "aegis_py/**"
+      - "scripts/**"
       - "tests/**"
+      - "docs/**"
       - "requirements.txt"
       - "README.md"
       - ".github/workflows/aegis-python-validation.yml"
@@ -39,3 +43,43 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}
         run: python -m pytest -q tests
 
+      - name: Run truth spotlight benchmark
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python scripts/benchmark_truth_spotlight.py
+
+      - name: Run truth spotlight gate
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python scripts/check_truth_spotlight_gate.py
+
+      - name: Render truth spotlight report
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python scripts/render_truth_spotlight_report.py
+
+      - name: Bundle truth release evidence
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python scripts/bundle_truth_release_evidence.py
+
+      - name: Upload truth spotlight artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: truth-spotlight-benchmark
+          path: .planning/benchmarks/truth_spotlight_summary.json
+          retention-days: 30
+
+      - name: Upload truth spotlight report
+        uses: actions/upload-artifact@v4
+        with:
+          name: truth-spotlight-report
+          path: .planning/benchmarks/truth_spotlight_report.md
+          retention-days: 30
+
+      - name: Upload truth release evidence bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: truth-release-evidence-bundle
+          path: .planning/benchmarks/truth_release_evidence_bundle.json
+          retention-days: 30

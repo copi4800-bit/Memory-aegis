@@ -212,6 +212,56 @@ class AegisMCPServer:
     def memory_surface(self) -> str:
         return self._to_json(self.app.public_surface())
 
+    def memory_spotlight(
+        self,
+        query: str,
+        *,
+        limit: int = 3,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> str:
+        return self._to_json(
+            self.app.spotlight(
+                query,
+                limit=limit,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                include_global=include_global,
+                semantic=semantic,
+                semantic_model=semantic_model,
+                intent=intent,
+            )
+        )
+
+    def memory_core_showcase(
+        self,
+        query: str,
+        *,
+        limit: int = 3,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> str:
+        return self._to_json(
+            self.app.core_showcase(
+                query,
+                limit=limit,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                include_global=include_global,
+                semantic=semantic,
+                semantic_model=semantic_model,
+                intent=intent,
+            )
+        )
+
     def memory_registry(self) -> str:
         return self._to_json({"backend": "python", "tools": TOOL_REGISTRY})
 
@@ -505,6 +555,28 @@ class AegisMCPServer:
             return self.memory_setup(args.get("workspace_dir"))
         if tool_name == "memory_surface":
             return self.memory_surface()
+        if tool_name == "memory_spotlight":
+            return self.memory_spotlight(
+                args.get("query"),
+                limit=args.get("limit", 3),
+                scope_type=args.get("scope_type"),
+                scope_id=args.get("scope_id"),
+                include_global=args.get("include_global", False),
+                semantic=args.get("semantic", False),
+                semantic_model=args.get("semantic_model"),
+                intent=args.get("intent"),
+            )
+        if tool_name == "memory_core_showcase":
+            return self.memory_core_showcase(
+                args.get("query"),
+                limit=args.get("limit", 3),
+                scope_type=args.get("scope_type"),
+                scope_id=args.get("scope_id"),
+                include_global=args.get("include_global", False),
+                semantic=args.get("semantic", False),
+                semantic_model=args.get("semantic_model"),
+                intent=args.get("intent"),
+            )
         if tool_name == "memory_registry":
             return self.memory_registry()
         if tool_name == "service_info":

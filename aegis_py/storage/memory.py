@@ -336,6 +336,7 @@ class MemoryRepository:
         rows = self.storage.fetch_all(
             """
             SELECT id, type, status, activation_score, archived_at, metadata_json
+                 , confidence, access_count, last_accessed_at, updated_at, created_at
             FROM memories
             WHERE status IN ('active', 'archived')
             """
@@ -358,6 +359,12 @@ class MemoryRepository:
                 stage = "archive_candidate"
             else:
                 stage = "deprecated_candidate"
+            stage = self._apply_staleness_retention_guard(
+                row=row,
+                stage=stage,
+                score=score,
+                cold_min=cold_min,
+            )
             self.storage._set_retention_stage(
                 row["id"],
                 stage=stage,
@@ -371,6 +378,41 @@ class MemoryRepository:
             if row["status"] == "active" and stage in {"archive_candidate", "deprecated_candidate"}:
                 summary["archived_now"] += 1
         return summary
+
+    def _apply_staleness_retention_guard(
+        self,
+        *,
+        row: Any,
+        stage: str,
+        score: float,
+        cold_min: float,
+    ) -> str:
+        if row["status"] != "active" or row["type"] != "semantic":
+            return stage
+
+        metadata = self.storage._coerce_metadata(row["metadata_json"])
+        if metadata.get("is_winner") or metadata.get("is_correction") or metadata.get("retention_pinned"):
+            return stage
+
+        last_ref = row["last_accessed_at"] or row["updated_at"] or row["created_at"]
+        if not isinstance(last_ref, str):
+            return stage
+        try:
+            last_time = datetime.fromisoformat(last_ref)
+        except ValueError:
+            return stage
+        if last_time.tzinfo is None:
+            last_time = last_time.replace(tzinfo=timezone.utc)
+
+        dormant_days = (datetime.now(timezone.utc) - last_time).total_seconds() / 86400.0
+        confidence = float(row["confidence"] or 0.0)
+        access_count = int(row["access_count"] or 0)
+
+        if dormant_days >= 365 and access_count <= 1 and confidence <= 0.9 and score <= max(cold_min, 0.42):
+            return "deprecated_candidate"
+        if dormant_days >= 90 and access_count <= 0 and confidence <= 0.85 and score <= 0.4:
+            return "archive_candidate"
+        return stage
 
     def archive_expired(self, session_id: str | None = None) -> None:
         now = now_iso()

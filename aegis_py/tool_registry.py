@@ -15,6 +15,8 @@ DEFAULT_OPERATION_ORDER = [
 
 ADVANCED_OPERATION_ORDER = [
     "memory_search",
+    "memory_spotlight",
+    "memory_core_showcase",
     "memory_context_pack",
     "memory_conflict_prompt",
     "memory_conflict_resolve",
@@ -50,6 +52,8 @@ ADVANCED_OPERATION_ORDER = [
 PUBLIC_OPERATION_ORDER = [
     "memory_store",
     "memory_search",
+    "memory_spotlight",
+    "memory_core_showcase",
     "memory_conflict_prompt",
     "memory_conflict_resolve",
     "memory_remember",
@@ -91,6 +95,8 @@ PUBLIC_OPERATION_ORDER = [
 TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "memory_store": {"audience": "public", "group": "public", "owner": "python_runtime"},
     "memory_search": {"audience": "advanced", "group": "public", "owner": "python_runtime"},
+    "memory_spotlight": {"audience": "advanced", "group": "public", "owner": "python_runtime"},
+    "memory_core_showcase": {"audience": "advanced", "group": "public", "owner": "python_runtime"},
     "memory_conflict_prompt": {"audience": "advanced", "group": "public", "owner": "python_runtime"},
     "memory_conflict_resolve": {"audience": "advanced", "group": "public", "owner": "python_runtime"},
     "memory_remember": {"audience": "default", "group": "public", "owner": "python_runtime"},

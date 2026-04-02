@@ -135,6 +135,99 @@ python3 scripts/v10_extreme_gauntlet.py
 
 ---
 
+## 🎯 Core Spotlight
+
+Want to see Aegis' strongest differentiator quickly?
+
+Run:
+
+```bash
+export PYTHONPATH=.
+python3 scripts/demo_core_spotlight.py
+```
+
+This spotlight demo shows one old fact, one correction, one query, and the governed result:
+
+- selected current truth
+- human-readable explanation
+- governance/truth state
+- why-not output for the older fact
+
+To see the same spotlight idea on competing contenders, run:
+
+```bash
+export PYTHONPATH=.
+python3 scripts/demo_conflict_spotlight.py
+```
+
+To measure the same advantage with deterministic fixtures, run:
+
+```bash
+export PYTHONPATH=.
+python3 scripts/benchmark_truth_spotlight.py
+```
+
+To enforce the governed pass/fail bar for that artifact:
+
+```bash
+python3 scripts/check_truth_spotlight_gate.py
+```
+
+To render a readable report from the same artifact:
+
+```bash
+python3 scripts/render_truth_spotlight_report.py
+```
+
+If `.planning/benchmarks/truth_spotlight_summary.before.json` exists, the report also includes a historical trend section against that prior artifact.
+
+To bundle the current summary, report, and gate status into one manifest:
+
+```bash
+python3 scripts/bundle_truth_release_evidence.py
+```
+
+To run the broader Aegis gauntlet across core truth, scale, adversarial, and product-readiness checks:
+
+```bash
+python3 scripts/aegis_gauntlet.py
+```
+
+To diagnose whether repetitive write pressure is landing as exact deduplication or admission-policy blocks:
+
+```bash
+python3 scripts/diagnose_ingest_pressure.py
+```
+
+To decide whether the current admission policy is healthy enough to close the write-path investigation for the current deployment class:
+
+```bash
+python3 scripts/check_ingest_policy_readiness.py
+```
+
+To render one full-core Aegis experience that shows selected truth, why-this, why-not, evidence, governance, signals, graph context, and scope health in one place:
+
+```bash
+python3 scripts/demo_core_showcase.py
+```
+
+To generate the same story as a polished local HTML report:
+
+```bash
+python3 scripts/render_core_showcase_html.py
+```
+
+To compare a previous benchmark artifact with the current one:
+
+```bash
+export PYTHONPATH=.
+python3 scripts/compare_truth_spotlight.py path/to/older_summary.json
+```
+
+For the short written version of that story, see [docs/WHY_AEGIS_CORE_WINS.md](docs/WHY_AEGIS_CORE_WINS.md).
+
+---
+
 ## 📋 MCP Tools (40+)
 
 ### Consumer Tools
@@ -148,7 +241,7 @@ python3 scripts/v10_extreme_gauntlet.py
 | `memory_profile` | See what Aegis remembers about you |
 
 ### Advanced Tools
-`memory_governance`, `memory_doctor`, `memory_scan`, `memory_visualize`, `memory_backup_*`, `memory_sync_*`, `memory_background_*`, `memory_vector_inspect`, `memory_evidence_artifacts`, `memory_storage_*`, and more.
+`memory_spotlight`, `memory_governance`, `memory_doctor`, `memory_scan`, `memory_visualize`, `memory_backup_*`, `memory_sync_*`, `memory_background_*`, `memory_vector_inspect`, `memory_evidence_artifacts`, `memory_storage_*`, and more.
 
 ---
 

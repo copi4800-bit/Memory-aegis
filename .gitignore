@@ -2,6 +2,9 @@ node_modules/
 dist/
 *.db
 *.db-*
+*.db-shm
+*.db-wal
+*.db-journal
 *.sqlite
 *.sqlite3
 *.bak
@@ -11,3 +14,8 @@ __pycache__/
 *.pyc
 .venv/
 *.egg-info/
+.pytest_cache/
+.planning/benchmarks/
+.tmp_*/
+tmp_*/
+stress-legacy-dbs/

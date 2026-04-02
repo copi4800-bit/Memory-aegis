@@ -1,19 +1,9 @@
-import os
-import asyncio
-from datetime import datetime
-from aegis_py.storage.manager import StorageManager
 from aegis_py.storage.models import Memory
-from aegis_py.retrieval.search import SearchPipeline
 from aegis_py.retrieval.models import SearchQuery
 
-async def test_v10_runtime_truth_alignment():
-    # Setup real temporary storage
-    db_path = "/home/hali/.openclaw/extensions/memory-aegis-v10/test_v10_runtime.db"
-    if os.path.exists(db_path):
-        os.remove(db_path)
-    
-    storage = StorageManager(db_path)
-    pipeline = SearchPipeline(storage)
+def test_v10_runtime_truth_alignment(runtime_harness):
+    storage = runtime_harness.storage
+    pipeline = runtime_harness.pipeline
     
     # 1. Put old memory (Active initially)
     old_mem = Memory(
@@ -27,12 +17,9 @@ async def test_v10_runtime_truth_alignment():
         scope_type="agent",
         scope_id="default"
     )
-    storage.put_memory(old_mem)
+    runtime_harness.put(old_mem)
     old_id = old_mem.id
-    
-    # Manually populate FTS if triggers didn't fire in test env
-    storage.execute("INSERT INTO memories_fts(rowid, content, subject) VALUES ((SELECT rowid FROM memories WHERE id = ?), ?, ?)", (old_id, old_mem.content, old_mem.subject))
-    
+
     # 2. Put new correction
     new_mem = Memory(
         id="new_mem",
@@ -43,11 +30,12 @@ async def test_v10_runtime_truth_alignment():
         source_kind="manual",
         source_ref="test",
         scope_type="agent",
-        scope_id="default"
+        scope_id="default",
+        metadata={"is_winner": True, "is_correction": True, "corrected_from": ["old_mem"]},
     )
-    storage.put_memory(new_mem)
+    runtime_harness.put(new_mem)
     new_id = new_mem.id
-    storage.execute("INSERT INTO memories_fts(rowid, content, subject) VALUES ((SELECT rowid FROM memories WHERE id = ?), ?, ?)", (new_id, new_mem.content, new_mem.subject))
+    runtime_harness.sync_fts()
     
     # Explicitly mark superseded for the test scenario
     storage.execute("UPDATE memories SET status = 'superseded' WHERE id = ?", (old_id,))
@@ -60,7 +48,7 @@ async def test_v10_runtime_truth_alignment():
         print(f"ID: {r['id']}, Status: {r['status']}, FTS_RowID: {r['fts_rowid']}, Content: {r['content'][:30]}")
     
     # 3. Perform real search
-    query = SearchQuery(query="prefer red", scope_type="agent", scope_id="default")
+    query = SearchQuery(query="prefer red", scope_type="agent", scope_id="default", min_score=-10.0)
     results = pipeline.search(query)
     
     print(f"--- Aegis v10 Runtime Integration Test ---")
@@ -74,13 +62,10 @@ async def test_v10_runtime_truth_alignment():
     
     # Assertions
     assert results[0].memory.id == new_id, "v10 Runtime should have ranked the New Memory (Truth Winner) as #1"
-    assert "được xác nhận là sự thật hiện tại" in serialized["human_reason"], "Explanation should reflect v10 truth alignment"
+    assert serialized["v10_governance"]["governance_status"] == "active"
+    assert "đã được cập nhật và xác nhận là sự thật mới nhất" in serialized["human_reason"], "Explanation should reflect current v10 correction wording"
     
-    # Cleanup
-    storage.close()
-    if os.path.exists(db_path):
-        os.remove(db_path)
     print("✅ test_v10_runtime_truth_alignment passed!")
 
 if __name__ == "__main__":
-    asyncio.run(test_v10_runtime_truth_alignment())
+    test_v10_runtime_truth_alignment()

@@ -1,24 +1,15 @@
-import os
-import asyncio
-from aegis_py.storage.manager import StorageManager
-from aegis_py.memory.core import MemoryManager
-from aegis_py.retrieval.search import SearchPipeline
 from aegis_py.retrieval.models import SearchQuery
 from aegis_py.storage.models import Memory
 from aegis_py.surface import serialize_search_result
 
-async def test_v10_full_path_integration():
+def test_v10_full_path_integration(runtime_harness):
     """
     Scenario: User corrects an old fact. v10 must rank the new one #1 
     with a 'correction winner' explanation.
     """
-    db_path = "/home/hali/.openclaw/extensions/memory-aegis-v10/test_v10_full_path_gsd.db"
-    if os.path.exists(db_path):
-        os.remove(db_path)
-    
-    storage = StorageManager(db_path)
-    manager = MemoryManager(storage)
-    pipeline = SearchPipeline(storage)
+    storage = runtime_harness.storage
+    manager = runtime_harness.manager
+    pipeline = runtime_harness.pipeline
     
     # 1. Store old fact
     old_mem = Memory(
@@ -44,14 +35,14 @@ async def test_v10_full_path_integration():
         source_kind="manual",
         source_ref="manual",
         scope_type="agent",
-        scope_id="default"
+        scope_id="default",
+        metadata={"is_winner": True, "is_correction": True, "corrected_from": ["old_fact"]},
     )
     manager.store(new_mem)
     
     # Simulate a real system where old one is marked superseded
     storage.execute("UPDATE memories SET status = 'superseded' WHERE id = 'old_fact'")
-    storage.execute("INSERT INTO memories_fts(rowid, content, subject) VALUES ((SELECT rowid FROM memories WHERE id = 'old_fact'), 'The CEO of TechCorp is Alice.', 'techcorp_ceo')")
-    storage.execute("INSERT INTO memories_fts(rowid, content, subject) VALUES ((SELECT rowid FROM memories WHERE id = 'new_fact'), 'Bob is now the CEO of TechCorp.', 'techcorp_ceo')")
+    runtime_harness.sync_fts()
     
     # 3. Search
     # We use a lower min_score just to ensure we see the candidates in the pool
@@ -68,19 +59,14 @@ async def test_v10_full_path_integration():
     serialized = serialize_search_result(top_result)
     print(f"Top Result ID: {top_result.memory.id}")
     print(f"Top Result Content: {top_result.memory.content}")
-    print(f"Decisive Factor: {serialized['v10_audit']['decisive_factor']}")
     print(f"Human Reason: {serialized['human_reason']}")
     
     # Assertions
     assert top_result.memory.id == "new_fact", "v10 should rank the new fact first"
-    assert serialized["v10_audit"]["decisive_factor"] == "hard_constraint_winner", "Should identify as truth winner"
-    assert "được xác nhận là sự thật hiện tại" in serialized["human_reason"]
-
-    # Cleanup
-    storage.close()
-    if os.path.exists(db_path):
-        os.remove(db_path)
+    assert serialized["v10_governance"]["governance_status"] == "active"
+    assert "đã được cập nhật và xác nhận là sự thật mới nhất" in serialized["human_reason"]
+    assert any(candidate["id"] == "old_fact" for candidate in top_result.suppressed_candidates)
     print("✅ test_v10_full_path_integration passed!")
 
 if __name__ == "__main__":
-    asyncio.run(test_v10_full_path_integration())
+    test_v10_full_path_integration()

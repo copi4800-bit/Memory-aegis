@@ -1,24 +1,15 @@
-import os
-import asyncio
-from aegis_py.storage.manager import StorageManager
-from aegis_py.memory.core import MemoryManager
-from aegis_py.retrieval.search import SearchPipeline
 from aegis_py.retrieval.models import SearchQuery
 from aegis_py.storage.models import Memory
-from aegis_py.v10_scoring.models import TruthRole, GovernanceStatus, RetrievableMode
+from aegis_py.v10.models import GovernanceStatus
 
-async def test_v10_full_governance_gauntlet():
+def test_v10_full_governance_gauntlet(runtime_harness):
     """
     Scenario: Safety violations and high-severity conflicts.
     v10 must exclude or quarantine records based on the Constitution.
     """
-    db_path = "/home/hali/.openclaw/extensions/memory-aegis-v10/test_v10_gauntlet.db"
-    if os.path.exists(db_path):
-        os.remove(db_path)
-    
-    storage = StorageManager(db_path)
-    manager = MemoryManager(storage)
-    pipeline = SearchPipeline(storage)
+    storage = runtime_harness.storage
+    manager = runtime_harness.manager
+    pipeline = runtime_harness.pipeline
     
     # 1. Setup Dangerous Memory (C0 Violation)
     m_danger = Memory(
@@ -43,9 +34,7 @@ async def test_v10_full_governance_gauntlet():
     storage.execute("INSERT INTO conflicts (id, subject_key, memory_a_id, memory_b_id, score, status, created_at) VALUES ('c1', 'dispute', 'conflict_record', 'other', 0.9, 'open', '2026-04-01')")
     
     # Fast FTS sync
-    storage.execute("INSERT INTO memories_fts(rowid, content, subject) VALUES ((SELECT rowid FROM memories WHERE id = 'danger'), ?, ?)", (m_danger.content, m_danger.subject))
-    storage.execute("INSERT INTO memories_fts(rowid, content, subject) VALUES ((SELECT rowid FROM memories WHERE id = 'conflict_record'), ?, ?)", (m_conflict.content, m_conflict.subject))
-    storage.execute("INSERT INTO memories_fts(rowid, content, subject) VALUES ((SELECT rowid FROM memories WHERE id = 'other'), ?, ?)", (m_other.content, m_other.subject))
+    runtime_harness.sync_fts()
     
     # 3. Perform Search
     query = SearchQuery(query="ILLEGAL Conflict", scope_type="agent", scope_id="main", min_score=-10.0)
@@ -68,7 +57,7 @@ async def test_v10_full_governance_gauntlet():
         metadata={"is_winner": True} # v10 C1 Policy requires this
     )
     manager.store(m_override)
-    storage.execute("INSERT INTO memories_fts(rowid, content, subject) VALUES ((SELECT rowid FROM memories WHERE id = 'user_pref'), ?, ?)", (m_override.content, m_override.subject))
+    runtime_harness.sync_fts()
     
     query_override = SearchQuery(query="nickname", scope_type="agent", scope_id="main", min_score=-10.0)
     setattr(query_override, "intent", "user_override_active") # Trigger C1
@@ -79,12 +68,7 @@ async def test_v10_full_governance_gauntlet():
     assert len(results_override) > 0
     assert results_override[0].v10_decision.governance_status == GovernanceStatus.ACTIVE
     assert "C1_USER_OVERRIDE_APPLIED" in results_override[0].v10_decision.policy_trace
-
-    # Cleanup
-    storage.close()
-    if os.path.exists(db_path):
-        os.remove(db_path)
     print("✅ test_v10_full_governance_gauntlet passed!")
 
 if __name__ == "__main__":
-    asyncio.run(test_v10_full_governance_gauntlet())
+    test_v10_full_governance_gauntlet()

@@ -20,8 +20,10 @@
       "memory_profile"
     ],
     "advancedTools": [
-      "memory_search",
-      "memory_context_pack",
+        "memory_search",
+        "memory_spotlight",
+        "memory_core_showcase",
+        "memory_context_pack",
       "memory_conflict_prompt",
       "memory_conflict_resolve",
       "memory_link_store",
@@ -122,6 +124,46 @@
           "query": { "type": "string" },
           "limit": { "type": "number" },
           "minScore": { "type": "number" }
+        },
+        "required": ["query"]
+      }
+    },
+      {
+        "name": "memory_core_showcase",
+        "description": "[Advanced] Render the full Aegis core story for one query: selected truth, why-this, why-not, evidence, governance, signals, graph context, and scope health.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string" },
+            "limit": { "type": "number" },
+            "scopeType": { "type": "string" },
+            "scopeId": { "type": "string" },
+            "includeGlobal": { "type": "boolean" },
+            "semantic": { "type": "boolean" },
+            "semanticModel": { "type": "string" },
+            "intent": {
+              "type": "string",
+              "description": "Optional showcase intent such as correction_lookup or user_override_active."
+            }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "name": "memory_spotlight",
+        "description": "[Advanced] Render a compact current-truth spotlight with selected memory, why-this, truth state, and why-not alternatives.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string" },
+          "limit": { "type": "number" },
+          "scopeType": { "type": "string" },
+          "scopeId": { "type": "string" },
+          "includeGlobal": { "type": "boolean" },
+          "intent": {
+            "type": "string",
+            "description": "Optional spotlight intent such as correction_lookup or user_override_active."
+          }
         },
         "required": ["query"]
       }

@@ -39,6 +39,8 @@ from .surface import (
     serialize_search_result,
     serialize_search_results,
 )
+from .spotlight_surface import build_spotlight_response, summarize_spotlight_results
+from .core_showcase_surface import build_core_showcase_payload, build_core_showcase_response
 from .hygiene.transitions import transition_memory
 from .ux.telemetry import AegisTelemetry
 from .ux.i18n import get_text
@@ -269,6 +271,137 @@ class AegisApp:
         except Exception as exc:
             observation.finish(result="error", error_code=exc.__class__.__name__)
             raise
+
+    def diagnose_ingest_attempt(
+        self,
+        content: str,
+        *,
+        type: str | None = None,
+        scope_type: str = "session",
+        scope_id: str = "default",
+        source_kind: str = "message",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Explains whether an ingest attempt would admit, deduplicate, or be blocked."""
+        engine = self.ingest_engine
+        if not engine.filter.is_worthy(content):
+            return {
+                "outcome": "not_worthy",
+                "reason_code": "filtered_not_worthy",
+                "reasons": ["filtered_not_worthy"],
+                "scope_type": scope_type,
+                "scope_id": scope_id,
+                "subject": kwargs.get("subject"),
+                "promotable": False,
+                "target_state": None,
+            }
+
+        metadata = dict(kwargs.get("metadata", {}) or {})
+        if engine.correction_detector.is_correction(content):
+            metadata["is_correction"] = True
+
+        existing_exact = self.storage.fetch_one(
+            "SELECT id FROM memories WHERE content = ? AND scope_id = ? AND scope_type = ? LIMIT 1",
+            (content, scope_id, scope_type),
+        )
+        if existing_exact:
+            return {
+                "outcome": "exact_dedup",
+                "reason_code": "exact_content_scope_match",
+                "reasons": ["exact_content_scope_match"],
+                "scope_type": scope_type,
+                "scope_id": scope_id,
+                "subject": kwargs.get("subject"),
+                "exact_duplicate_id": existing_exact["id"],
+                "promotable": True,
+                "target_state": "validated",
+            }
+
+        resolved_type = type
+        if resolved_type is None:
+            resolved_type = engine.lane_classifier.infer(
+                content=content,
+                session_id=kwargs.get("session_id"),
+                source_kind=source_kind,
+            )
+
+        subject = kwargs.get("subject") or engine.content_extractor.derive_subject(content)
+        summary = kwargs.get("summary") or engine.content_extractor.derive_summary(content)
+        subject = engine.subject_normalizer.normalize(subject)
+
+        confidence = kwargs.get("confidence")
+        activation_score = kwargs.get("activation_score")
+        if confidence is None or activation_score is None:
+            score_profile = engine.write_time_scorer.build_profile(
+                content=content,
+                memory_type=resolved_type,
+                source_kind=source_kind,
+            )
+            inferred_confidence, inferred_activation = engine.write_time_scorer.infer(
+                content=content,
+                memory_type=resolved_type,
+                source_kind=source_kind,
+            )
+            if confidence is None:
+                confidence = inferred_confidence
+            if activation_score is None:
+                activation_score = inferred_activation
+        else:
+            score_profile = engine.write_time_scorer.build_profile(
+                content=content,
+                memory_type=resolved_type,
+                source_kind=source_kind,
+            )
+
+        diagnostic_metadata = dict(metadata)
+        diagnostic_metadata["score_profile"] = score_profile
+        entities = engine.entity_extractor.extract(content=content, subject=subject)
+        if entities:
+            diagnostic_metadata["entities"] = entities
+        diagnostic_metadata.setdefault(
+            "evidence",
+            {
+                "event_id": "diagnostic://synthetic-evidence",
+                "kind": "synthetic_diagnostic",
+                "source_kind": source_kind,
+                "source_ref": kwargs.get("source_ref"),
+                "captured_at": "diagnostic",
+            },
+        )
+
+        memory = engine.factory.create(
+            type=resolved_type,
+            content=content,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            source_kind=source_kind,
+            metadata=diagnostic_metadata,
+            subject=subject,
+            summary=summary,
+            confidence=confidence,
+            activation_score=activation_score,
+            session_id=kwargs.get("session_id"),
+            source_ref=kwargs.get("source_ref"),
+        )
+        candidate = engine.build_candidate(memory)
+        decision = engine.evaluate_candidate(candidate)
+        blocked_reasons = [reason for reason in decision.reasons if reason.startswith("blocked_")]
+
+        return {
+            "outcome": "admit" if decision.promotable else "policy_block",
+            "reason_code": blocked_reasons[0] if blocked_reasons else "promotion_allowed",
+            "reasons": list(decision.reasons),
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+            "subject": subject,
+            "promotable": decision.promotable,
+            "target_state": decision.target_state,
+            "confidence": float(confidence or 0.0),
+            "activation_score": float(activation_score or 0.0),
+            "contradiction_risk": candidate.contradiction_risk,
+            "policy_name": decision.policy_name,
+            "score_profile": score_profile,
+        }
 
     def search(
         self,
@@ -2129,6 +2262,91 @@ class AegisApp:
 
     def _serialize_search_result(self, result: SearchResult, *, retrieval_mode: str = "explain") -> dict[str, Any]:
         return serialize_search_result(result, retrieval_mode=retrieval_mode)
+
+    def spotlight(
+        self,
+        query: str,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        limit: int = 3,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> dict[str, Any]:
+        st = scope_type or DEFAULT_CONSUMER_SCOPE_TYPE
+        sid = scope_id or DEFAULT_CONSUMER_SCOPE_ID
+        spotlight_query = SearchQuery(
+            query=query,
+            scope_id=sid,
+            scope_type=st,
+            limit=limit,
+            min_score=0.0,
+            include_global=include_global,
+            semantic=semantic,
+            semantic_model=semantic_model,
+        )
+        if intent:
+            setattr(spotlight_query, "intent", intent)
+        if semantic:
+            results = self.retrieval_orchestrator.retrieve(spotlight_query).results
+        else:
+            results = self.search_pipeline.search(spotlight_query)
+        return build_spotlight_response(
+            query,
+            results,
+            scope_type=st,
+            scope_id=sid,
+            locale=self.locale,
+        )
+
+    def core_showcase(
+        self,
+        query: str,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        limit: int = 3,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> dict[str, Any]:
+        st = scope_type or DEFAULT_CONSUMER_SCOPE_TYPE
+        sid = scope_id or DEFAULT_CONSUMER_SCOPE_ID
+        showcase_query = SearchQuery(
+            query=query,
+            scope_id=sid,
+            scope_type=st,
+            limit=limit,
+            min_score=0.0,
+            include_global=include_global,
+            semantic=semantic,
+            semantic_model=semantic_model,
+        )
+        if intent:
+            setattr(showcase_query, "intent", intent)
+        if semantic:
+            results = self.retrieval_orchestrator.retrieve(showcase_query).results
+        else:
+            results = self.search_pipeline.search(showcase_query)
+        if not results:
+            return build_core_showcase_response(query, scope_type=st, scope_id=sid, payload=None)
+
+        top = results[0]
+        memory_id = top.memory.id
+        payload = build_core_showcase_payload(
+            top,
+            evidence=self.operator_surface.get_memory_evidence(memory_id),
+            governance=self.operator_surface.inspect_governance(memory_id=memory_id, limit=10),
+            neighbors=self.operator_surface.memory_neighbors(memory_id, limit=5),
+            v10_signals=self.operator_surface.v10_core_signals(memory_id),
+            transition_gate=self.operator_surface.v10_transition_gate(memory_id),
+            health=self.memory_health_snapshot(scope_type=st, scope_id=sid),
+            locale=self.locale,
+        )
+        return build_core_showcase_response(query, scope_type=st, scope_id=sid, payload=payload)
 
     def _resolve_memory_reference(self, rel_path: str):
         memory_id = rel_path
