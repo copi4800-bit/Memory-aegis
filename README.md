@@ -122,37 +122,37 @@ If dense retrieval is added later, it should be added as:
 
 ## Quick Start
 
-Install locally:
+1. Install TruthKeep locally:
 
 ```bash
 pip install -e .
 ```
 
-Store a memory:
+2. Store one fact:
 
 ```bash
 truthkeep remember "The release owner is Bao."
 ```
 
-Recall it:
+3. Ask for it back in plain language:
 
 ```bash
-truthkeep recall "release owner bao"
+truthkeep recall "Who is the release owner?"
 ```
 
-Inspect the whole-system field snapshot:
+4. Inspect the whole-system memory field:
 
 ```bash
 truthkeep field-snapshot
 ```
 
-Run the short proof flow:
+5. Run the short proof flow:
 
 ```bash
 truthkeep prove-it
 ```
 
-For the full first-run walkthrough, read:
+If you want the full first-run walkthrough, read:
 
 ```bash
 cat QUICKSTART.md
