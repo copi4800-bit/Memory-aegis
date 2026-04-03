@@ -1,6 +1,8 @@
 import json
+import io
 
 from aegis_py import cli
+from aegis_py.app import AegisApp
 from scripts import prove_it
 
 
@@ -30,3 +32,49 @@ def test_prove_it_summary_passes_and_confirms_correctness_behavior(tmp_path):
     assert summary["passed"] is True
     assert summary["metrics"]["correction_top1_preserved"] is True
     assert summary["metrics"]["why_not_available"] is True
+
+
+def test_cli_emit_output_survives_unicode_on_narrow_console():
+    class NarrowConsole(io.StringIO):
+        encoding = "cp1252"
+
+        def write(self, text):
+            text.encode(self.encoding)
+            return super().write(text)
+
+    class FallbackConsole(NarrowConsole):
+        @property
+        def buffer(self):
+            return self
+
+        def write(self, payload):
+            if isinstance(payload, bytes):
+                return super().write(payload.decode(self.encoding, errors="replace"))
+            return super().write(payload)
+
+        def flush(self):
+            return None
+
+    stream = FallbackConsole()
+    cli.emit_output("đã ghi nhận thông tin này ạ.", stream=stream)
+    assert "?" in stream.getvalue() or "đã" in stream.getvalue()
+
+
+def test_memory_recall_does_not_leak_trust_prefix_token(tmp_path):
+    app = AegisApp(str(tmp_path / "phase125_recall.db"))
+    try:
+        app.put_memory(
+            "The release owner is Bao.",
+            type="semantic",
+            scope_type="agent",
+            scope_id="default",
+            source_kind="manual",
+            source_ref="test://phase125-recall",
+            subject="release.owner",
+            confidence=0.95,
+        )
+        text = app.memory_recall("release owner bao", scope_type="agent", scope_id="default")
+        assert "trust_prefix_uncertain" not in text
+        assert "Bao" in text
+    finally:
+        app.close()

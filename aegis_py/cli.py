@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import io
 import sys
-from pathlib import Path
 from typing import Any, Sequence
 
 from .app import AegisApp
@@ -56,9 +56,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         summary = build_proof_summary(db_path=args.db_path)
         if args.json:
-            print(json.dumps(summary, indent=2, ensure_ascii=False))
+            emit_output(json.dumps(summary, indent=2, ensure_ascii=False))
         else:
-            print(render_proof_summary(summary))
+            emit_output(render_proof_summary(summary))
         return 0
 
     if args.command == "mcp":
@@ -67,31 +67,31 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             server = AegisMCPServer(args.db_path)
             try:
-                print(server.startup_probe())
+                emit_output(server.startup_probe())
             finally:
                 server.close()
         else:
-            print("Run `aegis-mcp` to start the MCP server, or `truthkeep mcp --json` for a startup probe.")
+            emit_output("Run `aegis-mcp` to start the MCP server, or `truthkeep mcp --json` for a startup probe.")
         return 0
 
     app = AegisApp(args.db_path)
     try:
         if args.command == "remember":
-            print(app.memory_remember(args.content))
+            emit_output(app.memory_remember(args.content))
             return 0
         if args.command == "recall":
-            print(app.memory_recall(args.query, scope_type=args.scope_type, scope_id=args.scope_id))
+            emit_output(app.memory_recall(args.query, scope_type=args.scope_type, scope_id=args.scope_id))
             return 0
         if args.command == "correct":
-            print(app.memory_correct(args.content))
+            emit_output(app.memory_correct(args.content))
             return 0
         if args.command == "status":
             payload = app.status()
-            print(json.dumps(payload, indent=2, ensure_ascii=False) if args.json else render_status(payload))
+            emit_output(json.dumps(payload, indent=2, ensure_ascii=False) if args.json else render_status(payload))
             return 0
         if args.command == "field-snapshot":
             payload = app.v10_field_snapshot(scope_type=args.scope_type, scope_id=args.scope_id)
-            print(json.dumps(payload, indent=2, ensure_ascii=False))
+            emit_output(json.dumps(payload, indent=2, ensure_ascii=False))
             return 0
     finally:
         app.close()
@@ -124,6 +124,25 @@ def render_proof_summary(summary: dict[str, Any]) -> str:
             f"Summary: {summary.get('summary')}",
         ]
     )
+
+
+def emit_output(text: str, *, stream: io.TextIOBase | None = None) -> None:
+    target = stream or sys.stdout
+    try:
+        print(text, file=target)
+        return
+    except UnicodeEncodeError:
+        pass
+
+    payload = f"{text}\n"
+    encoding = getattr(target, "encoding", None) or "utf-8"
+    buffer = getattr(target, "buffer", None)
+    if buffer is not None:
+        buffer.write(payload.encode(encoding, errors="replace"))
+        buffer.flush()
+        return
+    target.write(payload.encode("ascii", errors="replace").decode("ascii"))
+    target.flush()
 
 
 if __name__ == "__main__":

@@ -47,6 +47,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "trust_prefix_strong": "✅ ",
         "trust_prefix_weak": "❓ ",
         "trust_prefix_conflicting": "⚠️ ",
+        "trust_prefix_uncertain": "",
         
         "label_action": "Hành động",
         "intent_correction": "Cập nhật",
@@ -67,6 +68,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "reason_trust_v_high": "highly reliable",
         "reason_usage_high": "frequently mentioned by {h_user}",
         "reason_fallback": "best fit for current context",
+        "trust_prefix_strong": "✅ ",
+        "trust_prefix_weak": "❓ ",
+        "trust_prefix_conflicting": "⚠️ ",
+        "trust_prefix_uncertain": "",
     }
 }
 
