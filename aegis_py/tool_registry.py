@@ -20,6 +20,8 @@ ADVANCED_OPERATION_ORDER = [
     "memory_experience_brief",
     "memory_consumer_shell",
     "memory_dashboard_shell",
+    "memory_workflow_shell",
+    "memory_truth_transition_timeline",
     "memory_context_pack",
     "memory_conflict_prompt",
     "memory_conflict_resolve",
@@ -61,6 +63,8 @@ PUBLIC_OPERATION_ORDER = [
     "memory_experience_brief",
     "memory_consumer_shell",
     "memory_dashboard_shell",
+    "memory_workflow_shell",
+    "memory_truth_transition_timeline",
     "memory_conflict_prompt",
     "memory_conflict_resolve",
     "memory_remember",
@@ -108,6 +112,8 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     "memory_experience_brief": {"audience": "advanced", "group": "public", "owner": "python_runtime"},
     "memory_consumer_shell": {"audience": "advanced", "group": "public", "owner": "python_runtime"},
     "memory_dashboard_shell": {"audience": "advanced", "group": "public", "owner": "python_runtime"},
+    "memory_workflow_shell": {"audience": "advanced", "group": "public", "owner": "python_runtime"},
+    "memory_truth_transition_timeline": {"audience": "advanced", "group": "public", "owner": "python_runtime"},
     "memory_conflict_prompt": {"audience": "advanced", "group": "public", "owner": "python_runtime"},
     "memory_conflict_resolve": {"audience": "advanced", "group": "public", "owner": "python_runtime"},
     "memory_remember": {"audience": "default", "group": "public", "owner": "python_runtime"},
@@ -185,3 +191,6 @@ def adapter_tool_targets() -> list[str]:
         if bridge.startswith("tool:")
     }
     return sorted(targets)
+
+
+

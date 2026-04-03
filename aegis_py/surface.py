@@ -15,6 +15,31 @@ DEFAULT_OPERATIONS = operations_for_audience("default")
 ADVANCED_OPERATIONS = operations_for_audience("advanced")
 PUBLIC_OPERATIONS = public_operations()
 
+ORDINARY_OPERATIONS = [
+    "memory_remember",
+    "memory_recall",
+    "memory_correct",
+    "memory_profile",
+    "memory_stats",
+]
+
+OPERATOR_OPERATIONS = [
+    "memory_workflow_shell",
+    "memory_truth_transition_timeline",
+    "memory_spotlight",
+    "memory_core_showcase",
+    "memory_governance",
+    "memory_v10_field_snapshot",
+    "memory_doctor",
+    "memory_rebuild",
+    "memory_scan",
+    "memory_storage_footprint",
+    "memory_storage_compact",
+    "memory_backup_upload",
+    "memory_backup_preview",
+    "memory_backup_download",
+]
+
 # Global v10 Renderer
 V10_RENDERER = FaithfulRenderer()
 
@@ -59,10 +84,10 @@ def build_public_surface(*, runtime_version: str) -> dict[str, Any]:
                 "bounded_health_state_reporting",
             ],
             "non_goals": [
-                "host-owned memory semantics",
-                "mandatory cloud service",
-                "direct storage-helper coupling for external hosts",
-                "graph_native_source_of_truth",
+                "host-owned-memory-semantics",
+                "mandatory-cloud-service",
+                "direct-storage-helper-coupling-for-external-hosts",
+                "graph-native-source-of-truth",
             ],
         },
         "consumer_contract": {
@@ -80,6 +105,16 @@ def build_public_surface(*, runtime_version: str) -> dict[str, Any]:
             "guided_hygiene": {
                 "ordinary_use": "background_or_triggered",
                 "operator_commands_optional": True,
+            },
+            "ordinary_lane": {
+                "description": "The narrow daily path for normal use.",
+                "operations": ORDINARY_OPERATIONS,
+                "workflow": ["remember", "inspect", "correct", "verify"],
+            },
+            "operator_lane": {
+                "description": "Inspection and maintenance tools for advanced use.",
+                "operations": OPERATOR_OPERATIONS,
+                "default_hidden": True,
             },
         },
         "service_boundary": {
@@ -136,19 +171,19 @@ def serialize_search_result(
     locale: str = "vi",
 ) -> dict[str, Any]:
     mode = normalize_retrieval_mode(retrieval_mode)
-    # Prioritize fresh v10_core_signals from the current retrieval run
     v10_state = result.v10_core_signals or (result.memory.metadata.get("v10_state", {}) if isinstance(result.memory.metadata, dict) else {})
-    
-    # Prioritize v10 human_reason if trace is available
+
     v10_trace = getattr(result, "v10_trace", None)
     v10_payload = {}
     if v10_trace:
-        # Determine narrative detail level based on mode (Absolute Beauty Sprint 1 & 3)
         detail_level = "standard"
-        if mode == "fast": detail_level = "standard" # User mode
-        elif mode == "explain": detail_level = "explain" # Explain mode
-        elif mode == "deep": detail_level = "deep" # Audit mode
-        
+        if mode == "fast":
+            detail_level = "standard"
+        elif mode == "explain":
+            detail_level = "explain"
+        elif mode == "deep":
+            detail_level = "deep"
+
         human_reason = V10_RENDERER.render(v10_trace, locale=locale, detail=detail_level)
         v10_payload = {
             "v10_score": getattr(result, "v10_score", 0.0),
@@ -157,12 +192,11 @@ def serialize_search_result(
             "judge_delta": v10_trace.judge_delta,
             "life_delta": v10_trace.life_delta,
             "hard_constraints_delta": getattr(v10_trace, "hard_constraints_delta", 0.0),
-            "factors": v10_trace.factors
+            "factors": v10_trace.factors,
         }
     else:
         human_reason = generate_human_reason(v10_state, locale=locale)
 
-    # v10 Governance Extension
     v10_decision = getattr(result, "v10_decision", None)
     v10_payload = {}
     if v10_decision:
@@ -171,7 +205,7 @@ def serialize_search_result(
             "governance_status": v10_decision.governance_status.value,
             "policy_trace": v10_decision.policy_trace,
             "admissible": v10_decision.admissible,
-            "decision_reason": v10_decision.decision_reason
+            "decision_reason": v10_decision.decision_reason,
         }
 
     payload = {
@@ -194,13 +228,12 @@ def serialize_search_result(
         "provenance": result.provenance,
         "conflict_status": result.conflict_status,
         "human_reason": human_reason,
-        "v10_audit": v10_payload, # Audit-friendly v10 trace
-        "v10_governance": v10_payload, # v10 Governance fields
+        "v10_audit": v10_payload,
+        "v10_governance": v10_payload,
         "unified_signals": unify_v10_signals(v10_state, locale=locale),
-        "suppressed_candidates": result.suppressed_candidates, # Thêm Why-not payload
+        "suppressed_candidates": result.suppressed_candidates,
         "hybrid_fusion": getattr(result, "hybrid_fusion", None),
     }
-    # Flatten v10 fields into the top-level payload for easy consumption if in v10 mode
     if v10_payload:
         payload.update(v10_payload)
     if mode == "fast":
@@ -295,3 +328,4 @@ def build_context_pack(
             "conflicting": sum(1 for result in results if result.trust_state == "conflicting"),
         },
     }
+

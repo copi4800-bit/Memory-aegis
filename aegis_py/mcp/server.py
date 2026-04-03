@@ -341,6 +341,58 @@ class AegisMCPServer:
             )
         )
 
+    def memory_truth_transition_timeline(
+        self,
+        query: str | None = None,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        limit: int = 3,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> str:
+        return self._to_json(
+            self.app.truth_transition_timeline(
+                query,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                limit=limit,
+                include_global=include_global,
+                semantic=semantic,
+                semantic_model=semantic_model,
+                intent=intent,
+            )
+        )
+
+    def memory_workflow_shell(
+        self,
+        query: str | None = None,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        workspace_dir: str | None = None,
+        limit: int = 3,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> str:
+        return self._to_json(
+            self.app.workflow_shell(
+                query,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                workspace_dir=workspace_dir,
+                limit=limit,
+                include_global=include_global,
+                semantic=semantic,
+                semantic_model=semantic_model,
+                intent=intent,
+            )
+        )
+
     def memory_registry(self) -> str:
         return self._to_json({"backend": "python", "tools": TOOL_REGISTRY})
 
@@ -560,6 +612,8 @@ class AegisMCPServer:
             "memory_experience_brief": ("query",),
             "memory_consumer_shell": (),
             "memory_dashboard_shell": (),
+            "memory_workflow_shell": (),
+            "memory_truth_transition_timeline": (),
             "memory_v10_field_snapshot": (),
             "memory_sync_preview": ("envelope_path",),
             "memory_sync_import": ("envelope_path",),
@@ -773,6 +827,29 @@ class AegisMCPServer:
                 semantic_model=args.get("semantic_model"),
                 intent=args.get("intent"),
             )
+        if tool_name == "memory_truth_transition_timeline":
+            return self.memory_truth_transition_timeline(
+                args.get("query"),
+                scope_type=args.get("scope_type"),
+                scope_id=args.get("scope_id"),
+                limit=args.get("limit", 3),
+                include_global=args.get("include_global", False),
+                semantic=args.get("semantic", False),
+                semantic_model=args.get("semantic_model"),
+                intent=args.get("intent"),
+            )
+        if tool_name == "memory_workflow_shell":
+            return self.memory_workflow_shell(
+                args.get("query"),
+                scope_type=args.get("scope_type"),
+                scope_id=args.get("scope_id"),
+                workspace_dir=args.get("workspace_dir"),
+                limit=args.get("limit", 3),
+                include_global=args.get("include_global", False),
+                semantic=args.get("semantic", False),
+                semantic_model=args.get("semantic_model"),
+                intent=args.get("intent"),
+            )
         if tool_name == "memory_registry":
             return self.memory_registry()
         if tool_name == "service_info":
@@ -935,3 +1012,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+
+

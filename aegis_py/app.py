@@ -48,6 +48,8 @@ from .core_showcase_surface import build_core_showcase_payload, build_core_showc
 from .experience_brief_surface import build_experience_brief_payload
 from .consumer_shell_surface import build_consumer_shell_payload
 from .dashboard_shell_surface import build_dashboard_shell_payload
+from .workflow_shell_surface import build_workflow_shell_payload
+from .truth_transition_timeline_surface import build_truth_transition_timeline_payload
 from .hygiene.transitions import transition_memory
 from .memory.weaver import WeaverBeast
 from .retrieval.compressed_tier import build_compressed_tier_payload
@@ -2558,6 +2560,16 @@ class AegisApp:
             semantic_model=semantic_model,
             intent=intent,
         )
+        truth_timeline = self.truth_transition_timeline(
+            effective_query,
+            scope_type=st,
+            scope_id=sid,
+            limit=limit,
+            include_global=include_global,
+            semantic=semantic,
+            semantic_model=semantic_model,
+            intent=intent,
+        )
         return build_dashboard_shell_payload(
             query=effective_query,
             scope_type=st,
@@ -2565,6 +2577,119 @@ class AegisApp:
             consumer_shell=consumer_shell,
             experience_brief=experience_brief,
             core_showcase=core_showcase,
+            truth_transition_timeline=truth_timeline,
+        )
+
+    def truth_transition_timeline(
+        self,
+        query: str | None = None,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        limit: int = 3,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> dict[str, Any]:
+        st = scope_type or DEFAULT_CONSUMER_SCOPE_TYPE
+        sid = scope_id or DEFAULT_CONSUMER_SCOPE_ID
+        effective_query = query or "What changed in the current truth for this scope?"
+        experience_brief = self.experience_brief(
+            effective_query,
+            scope_type=st,
+            scope_id=sid,
+            limit=limit,
+            include_global=include_global,
+            semantic=semantic,
+            semantic_model=semantic_model,
+            intent=intent,
+        )
+        brief_result = experience_brief.get("result") or {}
+        showcase = brief_result.get("showcase") or {}
+        winner_id = showcase.get("memory_id")
+        scope_governance = self.inspect_governance(scope_type=st, scope_id=sid, limit=12)
+        winner_governance = self.inspect_governance(memory_id=winner_id, limit=12) if winner_id else {"events": [], "transitions": []}
+        suppressed_governance: dict[str, dict[str, Any]] = {}
+        for item in brief_result.get("why_not", [])[:3]:
+            memory_id = item.get("id") if isinstance(item, dict) else None
+            if memory_id:
+                suppressed_governance[memory_id] = self.inspect_governance(memory_id=memory_id, limit=6)
+        return build_truth_transition_timeline_payload(
+            query=effective_query,
+            scope_type=st,
+            scope_id=sid,
+            experience_brief=experience_brief,
+            scope_governance=scope_governance,
+            winner_governance=winner_governance,
+            suppressed_governance=suppressed_governance,
+        )
+
+    def workflow_shell(
+        self,
+        query: str | None = None,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        workspace_dir: str | None = None,
+        limit: int = 3,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> dict[str, Any]:
+        st = scope_type or DEFAULT_CONSUMER_SCOPE_TYPE
+        sid = scope_id or DEFAULT_CONSUMER_SCOPE_ID
+        effective_query = query or "What should TruthKeep remember or correct right now?"
+        consumer_shell = self.consumer_shell(
+            effective_query,
+            scope_type=st,
+            scope_id=sid,
+            workspace_dir=workspace_dir,
+            limit=limit,
+            include_global=include_global,
+            semantic=semantic,
+            semantic_model=semantic_model,
+            intent=intent,
+        )
+        experience_brief = self.experience_brief(
+            effective_query,
+            scope_type=st,
+            scope_id=sid,
+            limit=limit,
+            include_global=include_global,
+            semantic=semantic,
+            semantic_model=semantic_model,
+            intent=intent,
+        )
+        core_showcase = self.core_showcase(
+            effective_query,
+            scope_type=st,
+            scope_id=sid,
+            limit=limit,
+            include_global=include_global,
+            semantic=semantic,
+            semantic_model=semantic_model,
+            intent=intent,
+        )
+        truth_timeline = self.truth_transition_timeline(
+            effective_query,
+            scope_type=st,
+            scope_id=sid,
+            limit=limit,
+            include_global=include_global,
+            semantic=semantic,
+            semantic_model=semantic_model,
+            intent=intent,
+        )
+        return build_workflow_shell_payload(
+            query=effective_query,
+            scope_type=st,
+            scope_id=sid,
+            consumer_shell=consumer_shell,
+            experience_brief=experience_brief,
+            core_showcase=core_showcase,
+            truth_transition_timeline=truth_timeline,
         )
 
     def _resolve_memory_reference(self, rel_path: str):
@@ -3054,3 +3179,9 @@ class AegisApp:
             (scope_filter["scope_type"], scope_filter["scope_id"]),
         ).fetchall()
         return [dict(row) for row in rows]
+
+
+
+
+
+

@@ -26,6 +26,8 @@
         "memory_experience_brief",
         "memory_consumer_shell",
         "memory_dashboard_shell",
+        "memory_workflow_shell",
+        "memory_truth_transition_timeline",
         "memory_context_pack",
       "memory_conflict_prompt",
       "memory_conflict_resolve",
@@ -59,7 +61,7 @@
       "memory_backup_download",
       "memory_surface"
     ],
-    "onboardingCommand": "aegis-setup",
+    "onboardingCommand": "truthkeep-setup",
     "onboardingRuntime": "python"
   },
   "configSchema": {
@@ -116,7 +118,7 @@
       "type": "string",
       "enum": ["off", "auto", "force"],
       "default": "force",
-      "description": "Route plugin runtime through aegis_py. 'force' is the Python-only path; 'auto' remains transitional only while host packaging cleanup is in progress."
+      "description": "Route plugin runtime through the TruthKeep Python compatibility layer. 'force' is the Python-only path; 'auto' remains transitional only while host packaging cleanup is in progress."
     }
   },
   "tools": [
@@ -135,7 +137,7 @@
     },
     {
         "name": "memory_core_showcase",
-        "description": "[Advanced] Render the full Aegis core story for one query: selected truth, why-this, why-not, evidence, governance, signals, graph context, and scope health.",
+        "description": "[Advanced] Render the full TruthKeep core story for one query: selected truth, why-this, why-not, evidence, governance, signals, graph context, and scope health.",
         "parameters": {
           "type": "object",
           "properties": {
@@ -196,6 +198,41 @@
     {
         "name": "memory_dashboard_shell",
         "description": "[Advanced] Render a unified TruthKeep dashboard that combines consumer shell, current-truth brief, and deep inspection in one destination.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string" },
+            "scopeType": { "type": "string" },
+            "scopeId": { "type": "string" },
+            "workspaceDir": { "type": "string" },
+            "limit": { "type": "number" },
+            "includeGlobal": { "type": "boolean" },
+            "semantic": { "type": "boolean" },
+            "semanticModel": { "type": "string" },
+            "intent": { "type": "string" }
+          }
+        }
+    },
+    {
+        "name": "memory_truth_transition_timeline",
+        "description": "[Advanced] Render the transition path from older facts to the current truth, including suppressed memories and scope governance pulse.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string" },
+            "scopeType": { "type": "string" },
+            "scopeId": { "type": "string" },
+            "limit": { "type": "number" },
+            "includeGlobal": { "type": "boolean" },
+            "semantic": { "type": "boolean" },
+            "semanticModel": { "type": "string" },
+            "intent": { "type": "string" }
+          }
+        }
+    },
+    {
+        "name": "memory_workflow_shell",
+        "description": "[Advanced] Render a workflow-first TruthKeep shell for remember, inspect, correct, and verify loops.",
         "parameters": {
           "type": "object",
           "properties": {
@@ -394,7 +431,7 @@
     },
     {
       "name": "memory_sync_import",
-      "description": "[Advanced] Import a Python-owned sync envelope into local Aegis storage.",
+      "description": "[Advanced] Import a Python-owned sync envelope into local TruthKeep storage.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -430,7 +467,7 @@
     },
     {
       "name": "memory_backup_list",
-      "description": "[Advanced] List known Aegis backups using manifest-backed metadata.",
+      "description": "[Advanced] List known TruthKeep backups using manifest-backed metadata.",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -468,7 +505,7 @@
     },
     {
       "name": "memory_setup",
-      "description": "[Basic] Run the Python-owned Aegis setup and readiness checks.",
+      "description": "[Basic] Run the Python-owned TruthKeep setup and readiness checks.",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -780,7 +817,7 @@
     },
     {
       "name": "memory_profile",
-      "description": "[Basic] Show what Aegis remembers about you: identity, preferences, projects, and recent facts.",
+      "description": "[Basic] Show what TruthKeep remembers about you: identity, preferences, projects, and recent facts.",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -813,13 +850,13 @@
       "name": "remember",
       "description": "Lưu thông tin vào bộ nhớ dài hạn.",
       "shortcut": "/remember",
-      "prompt": "Store the following information into Aegis long-term memory using the memory_store tool. Confirm what was stored."
+      "prompt": "Store the following information into TruthKeep long-term memory using the memory_store tool. Confirm what was stored."
     },
     {
       "name": "recall",
       "description": "Truy vấn bộ nhớ dài hạn.",
       "shortcut": "/recall",
-      "prompt": "Search Aegis memory using the memory_search tool for context relevant to the user's query. Present results clearly with sources and relevance scores."
+      "prompt": "Search TruthKeep memory using the memory_search tool for context relevant to the user's query. Present results clearly with sources and relevance scores."
     },
     {
       "name": "memory-status",
@@ -841,15 +878,20 @@
     },
     {
       "name": "memory-profile",
-      "description": "Xem Aegis đang nhớ gì về bạn.",
+      "description": "Xem TruthKeep dang nho gi ve ban.",
       "shortcut": "/memory-profile",
-      "prompt": "Run memory_profile tool. Show the user what Aegis remembers about them: identity, preferences, projects, workflows, and recent knowledge."
+      "prompt": "Run memory_profile tool. Show the user what TruthKeep remembers about them: identity, preferences, projects, workflows, and recent knowledge."
     },
     {
       "name": "memory-setup",
-      "description": "Setup lần đầu cho Aegis.",
+      "description": "Setup lan dau cho TruthKeep.",
       "shortcut": "/memory-setup",
       "prompt": "Guide the user through the Python-first setup flow described in the README: install requirements, run the Python MCP self-test, and confirm the local DB path."
     }
   ]
 }
+
+
+
+
+
