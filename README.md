@@ -128,25 +128,13 @@ If dense retrieval is added later, it should be added as:
 pip install -e .
 ```
 
-2. Store one fact:
-
-```bash
-truthkeep remember "The release owner is Bao."
-```
-
-3. Ask for it back in plain language:
-
-```bash
-truthkeep recall "Who is the release owner?"
-```
-
-4. Inspect the whole-system memory field:
+2. Inspect the whole-system memory field:
 
 ```bash
 truthkeep field-snapshot
 ```
 
-5. Run the short proof flow:
+3. Run the short proof flow:
 
 ```bash
 truthkeep prove-it
@@ -178,7 +166,7 @@ That proof flow checks that:
 Start the MCP server:
 
 ```bash
-aegis-mcp
+truthkeep-mcp
 ```
 
 Or inspect startup readiness through the standalone CLI:
@@ -300,15 +288,17 @@ You do not need to understand the internal module layout to use TruthKeep.
 
 If you want the design rationale behind the engine, start with:
 
-- [Why Aegis Core Wins](docs/WHY_AEGIS_CORE_WINS.md)
+- [Why TruthKeep Core Wins](docs/WHY_AEGIS_CORE_WINS.md)
 - [Proof Hub](docs/PROOF_HUB.md)
 
 ## Project Layout
 
 The repo is organized simply:
 
+- `truthkeep/`
+  - public package, CLI wrappers, and TruthKeep-first entry points
 - `aegis_py/`
-  - runtime, storage, retrieval, governance, MCP, and public CLI
+  - internal compatibility runtime, storage, retrieval, governance, and MCP implementation
 - `scripts/`
   - demos, proofs, benchmarks, gates, gauntlets
 - `tests/`
@@ -327,3 +317,6 @@ It is strongest where memory has to stay **right**, not merely **relevant**.
 ## License
 
 MIT
+
+
+
