@@ -380,6 +380,14 @@ def render_core_showcase_text(payload: dict[str, Any]) -> str:
                 f"pterodactyl={payload['retrieval_predators'].get('pterodactyl_graph_overview') or 'none'}"
             ),
             "",
+            "[Hybrid Governance]",
+            (
+                f"route={payload['retrieval_predators'].get('hybrid_fusion', {}).get('route') or 'none'} | "
+                f"fused={_to_float(payload['retrieval_predators'].get('hybrid_fusion', {}).get('fused_score')):.3f} | "
+                f"agreement={_to_float(payload['retrieval_predators'].get('hybrid_fusion', {}).get('agreement')):.3f} | "
+                f"alignment={_to_float(payload['retrieval_predators'].get('hybrid_fusion', {}).get('governance_alignment')):.3f}"
+            ),
+            "",
             "[Pterodactyl Flight]",
             (
                 f"link_type={payload['retrieval_predators'].get('pterodactyl_route', {}).get('link_type') or 'none'} | "

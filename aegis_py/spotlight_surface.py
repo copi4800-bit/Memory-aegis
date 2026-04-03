@@ -98,6 +98,7 @@ def _build_retrieval_predators(payload: dict[str, Any]) -> dict[str, Any]:
         "pterodactyl_graph_overview": pterodactyl,
         "pterodactyl_route": pterodactyl_route,
         "pterodactyl_flight_story": flight_story,
+        "hybrid_fusion": payload.get("hybrid_fusion") or {},
     }
 
 

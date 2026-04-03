@@ -159,6 +159,7 @@ class SearchPipeline:
             setattr(sr, "v10_trace", v10_trace)
             setattr(sr, "v10_score", v10_final_score)
             setattr(sr, "v10_decision", decision)
+            setattr(sr, "hybrid_fusion", getattr(result, "hybrid_fusion", None) if not isinstance(result, dict) else result.get("hybrid_fusion"))
             raw_candidates.append(sr)
 
         # Final Slot Resolution
@@ -313,6 +314,19 @@ class SearchPipeline:
                 result.v10_score = round(float(getattr(result, "v10_score", 0.0) or 0.0) + pressure, 6)
                 trace.factors["prehistoric_judged_recall_pressure"] = round(pressure, 6)
                 trace.factors["final_score"] = round(result.v10_score, 6)
+
+            hybrid = getattr(result, "hybrid_fusion", None) or {}
+            fused_score = float(hybrid.get("fused_score", 0.0) or 0.0)
+            governance_alignment = float(hybrid.get("governance_alignment", 0.0) or 0.0)
+            if fused_score > 0.0:
+                hybrid_pressure = round(((fused_score - 0.5) * 0.08) + ((governance_alignment - 0.5) * 0.04), 6)
+                if hybrid_pressure != 0.0:
+                    result.v10_score = round(float(getattr(result, "v10_score", 0.0) or 0.0) + hybrid_pressure, 6)
+                    trace.factors["hybrid_governance_fused_score"] = round(fused_score, 6)
+                    trace.factors["hybrid_governance_alignment"] = round(governance_alignment, 6)
+                    trace.factors["hybrid_governance_pressure"] = hybrid_pressure
+                    trace.factors["final_score"] = round(result.v10_score, 6)
+                    decision.decision_reason.append("hybrid_governance_pressure")
 
     def _build_prehistoric_scope_context(self, query_obj: SearchQuery | None) -> dict[str, Any]:
         if query_obj is None:

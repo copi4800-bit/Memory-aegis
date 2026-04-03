@@ -69,6 +69,7 @@ def test_core_showcase_tool_returns_full_core_story(tmp_path):
         assert "[Argentinosaurus Scope]" in payload["showcase_text"]
         assert "[Paraceratherium Trace]" in payload["showcase_text"]
         assert "[Paraceratherium Narrative]" in payload["showcase_text"]
+        assert "[Hybrid Governance]" in payload["showcase_text"]
         assert "[Pterodactyl Flight]" in payload["showcase_text"]
         assert "[Megarachne Topology]" in payload["showcase_text"]
         assert "[Governance Timeline]" in payload["showcase_text"]

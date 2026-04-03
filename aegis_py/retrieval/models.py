@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from .contract import build_provenance, derive_trust_shape, summarize_reason
 from ..storage.models import Memory
@@ -24,6 +25,7 @@ class SearchResult:
     relation_via_link_metadata: dict[str, object] | None = None
     relation_via_hops: int | None = None
     v10_core_signals: dict[str, object] | None = None
+    hybrid_fusion: dict[str, object] | None = None
     # Danh sách Why-not (Chuẩn 6.md)
     suppressed_candidates: list[dict[str, Any]] = field(default_factory=list)
 

@@ -198,6 +198,7 @@ def serialize_search_result(
         "v10_governance": v10_payload, # v10 Governance fields
         "unified_signals": unify_v10_signals(v10_state, locale=locale),
         "suppressed_candidates": result.suppressed_candidates, # Thêm Why-not payload
+        "hybrid_fusion": getattr(result, "hybrid_fusion", None),
     }
     # Flatten v10 fields into the top-level payload for easy consumption if in v10 mode
     if v10_payload:

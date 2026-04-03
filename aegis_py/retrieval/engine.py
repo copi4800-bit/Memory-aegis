@@ -6,9 +6,15 @@ import json
 import re
 from typing import Any
 
-from .contract import blend_retrieval_score, build_reason_tags, score_link_expansion
+from .contract import blend_retrieval_score, build_reason_tags, score_link_expansion, normalize_fts_rank
 from .compressed_prefilter import CompressedCandidatePrefilter, CompressedSignature
 from .compressed_tier import build_compressed_tier_payload
+from .hybrid_governance import (
+    classify_query_route,
+    compute_governance_alignment,
+    fuse_hybrid_signals,
+    hybrid_reason_tags,
+)
 from .oracle import OracleBeast
 from .v10_dynamics import compute_v10_core_signals, dynamic_reason_tags, dynamic_score_bonus
 from ..storage.models import RETRIEVABLE_MEMORY_STATUS_SQL
@@ -47,6 +53,7 @@ class CanonicalSearchResult:
     relation_via_link_metadata: dict[str, object] | None = None
     relation_via_hops: int | None = None
     v10_core_signals: dict[str, Any] | None = None
+    hybrid_fusion: dict[str, Any] | None = None
 
 
 def _lexical_tokens(text: str) -> list[str]:
@@ -144,6 +151,7 @@ def run_scoped_search(
 ) -> list[CanonicalSearchResult]:
     fts_query = _sanitize_fts_query(query)
     oracle = OracleBeast(db)
+    route_profile = classify_query_route(query)
     prefilter = CompressedCandidatePrefilter()
     where_clauses = [f"m.status IN ({RETRIEVABLE_MEMORY_STATUS_SQL})"]
     params: list[Any] = []
@@ -272,6 +280,7 @@ def run_scoped_search(
             conflict_weight=conflict_weight,
             direct_conflict_open=direct_conflict_open,
         )
+        normalized_rank = normalize_fts_rank(float(payload["lexical_score"]))
         score = blend_retrieval_score(float(payload["lexical_score"]), float(payload["activation_score"]), score_profile)
         utahraptor_boost, utahraptor_reasons = _utahraptor_lexical_pursuit(
             query=query,
@@ -291,9 +300,34 @@ def run_scoped_search(
                 oracle=oracle,
             )
             score += basilosaurus_boost
+        compressed_stage_score = 0.0
         if payload["id"] in compressed_ids:
             compressed_score = float(payload.get("compressed_prefilter_score") or 0.0)
-            score += round(min(0.1, compressed_score * 0.16), 6)
+            compressed_stage_score = round(min(0.1, compressed_score * 0.16), 6)
+            score += compressed_stage_score
+        scope_signal = 1.0 if (payload["scope_type"] == scope_type and payload["scope_id"] == scope_id) else 0.72 if payload["scope_type"] == "global" else 0.44
+        semantic_signal = 0.0
+        if payload["id"] in semantic_ids:
+            semantic_signal = min(1.0, basilosaurus_boost * 4.5)
+        lexical_signal = min(1.0, (normalized_rank * 0.72) + (utahraptor_boost * 3.0))
+        compressed_signal = min(1.0, float(payload.get("compressed_prefilter_score") or 0.0))
+        activation_signal = min(1.0, float(payload["activation_score"]))
+        hybrid_fusion = fuse_hybrid_signals(
+            route_profile=route_profile,
+            signals={
+                "lexical": lexical_signal,
+                "semantic": semantic_signal,
+                "graph": 0.0,
+                "compressed": compressed_signal,
+                "scope": scope_signal,
+                "activation": activation_signal,
+            },
+            governance_alignment=compute_governance_alignment(
+                admission_state=admission_state,
+                conflict_status=payload["conflict_status"],
+            ),
+        )
+        score += round(hybrid_fusion.fused_score * 0.08, 6)
         score = round(score + dynamic_score_bonus(v10_core_signals), 6)
         if admission_state == "hypothesized":
             score = round(score * 0.88, 6)
@@ -323,6 +357,7 @@ def run_scoped_search(
             reasons.append(f"turboquant_candidate_tier:{payload.get('compressed_prefilter_tier', 'warm')}")
             reasons.append(f"turboquant_prefilter_band:{payload.get('compressed_prefilter_band', 'light')}")
             reasons.append(f"turboquant_prefilter_score:{round(float(payload.get('compressed_prefilter_score') or 0.0), 3)}")
+        reasons.extend(hybrid_reason_tags(hybrid_fusion))
         reasons.extend(dynamic_reason_tags(v10_core_signals))
         retrieval_stage = "semantic_recall" if payload["id"] in semantic_ids and payload["id"] not in lexical_ids else "lexical"
         if payload["id"] in compressed_ids and payload["id"] not in lexical_ids and payload["id"] not in semantic_ids:
@@ -346,6 +381,7 @@ def run_scoped_search(
                 score_profile=score_profile,
                 retrieval_stage=retrieval_stage,
                 v10_core_signals=v10_core_signals,
+                hybrid_fusion=hybrid_fusion.to_payload(),
             ),
         )
 
@@ -399,6 +435,23 @@ def run_scoped_search(
                 conflict_weight=conflict_map.get(payload["id"], (0.0, False))[0],
                 direct_conflict_open=conflict_map.get(payload["id"], (0.0, False))[1],
             )
+            scope_signal = 1.0 if (payload["scope_type"] == scope_type and payload["scope_id"] == scope_id) else 0.72 if payload["scope_type"] == "global" else 0.44
+            hybrid_fusion = fuse_hybrid_signals(
+                route_profile=route_profile,
+                signals={
+                    "lexical": 0.0,
+                    "semantic": 0.0,
+                    "graph": min(1.0, graph_score),
+                    "compressed": 0.0,
+                    "scope": scope_signal,
+                    "activation": min(1.0, float(payload["activation_score"])),
+                },
+                governance_alignment=compute_governance_alignment(
+                    admission_state=admission_state,
+                    conflict_status=payload.get("conflict_status", "none"),
+                ),
+            )
+            reasons.extend(hybrid_reason_tags(hybrid_fusion))
             reasons.extend(dynamic_reason_tags(v10_core_signals))
             _merge_result(
                 results_by_id,
@@ -408,7 +461,7 @@ def run_scoped_search(
                     content=payload["content"],
                     summary=payload["summary"],
                     subject=payload["subject"],
-                    score=round(graph_score + dynamic_score_bonus(v10_core_signals), 6),
+                    score=round(graph_score + (hybrid_fusion.fused_score * 0.08) + dynamic_score_bonus(v10_core_signals), 6),
                     reasons=reasons,
                     source_kind=payload["source_kind"],
                     source_ref=payload["source_ref"],
@@ -422,6 +475,7 @@ def run_scoped_search(
                     relation_via_memory_id=payload.get("source_id"),
                     relation_via_hops=1,
                     v10_core_signals=v10_core_signals,
+                    hybrid_fusion=hybrid_fusion.to_payload(),
                 ),
             )
 
