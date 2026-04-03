@@ -95,3 +95,16 @@ class SearchQuery:
     semantic: bool = False
     semantic_model: str | None = None
     fallback_to_or: bool = False
+
+    @property
+    def argentinosaurus_scope_geometry(self) -> dict[str, object]:
+        include_global = bool(self.include_global)
+        explicit_scope = bool(self.scope_type and self.scope_id)
+        breadth = 0.38 + (0.22 if explicit_scope else 0.0) + (0.18 if include_global else 0.0)
+        return {
+            "scope_type": self.scope_type,
+            "scope_id": self.scope_id,
+            "include_global": include_global,
+            "explicit_scope": explicit_scope,
+            "argentinosaurus_scope_geometry": round(min(0.99, breadth), 3),
+        }

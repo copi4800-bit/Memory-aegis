@@ -8,6 +8,7 @@ from typing import List, Optional, Dict, Any
 import sqlite3
 from .storage.manager import StorageManager
 from .memory.ingest import IngestEngine
+from .memory.correction import resolve_correction_target
 from .retrieval.search import SearchPipeline
 from .retrieval.models import SearchQuery, SearchResult
 from .retrieval.contract import ExplainerBeast
@@ -19,7 +20,10 @@ from .retrieval.v10_dynamics import (
     bundle_energy_snapshot,
     compute_v10_core_signals,
 )
+from .hygiene.axolotl import AxolotlBeast
+from .hygiene.bowerbird import BowerbirdBeast
 from .hygiene.engine import HygieneEngine
+from .hygiene.decay import DecayBeast
 from .preferences.manager import PreferenceManager
 from .preferences.extractor import SignalExtractor
 from .cognition.core import StyleTracker
@@ -41,7 +45,12 @@ from .surface import (
 )
 from .spotlight_surface import build_spotlight_response, summarize_spotlight_results
 from .core_showcase_surface import build_core_showcase_payload, build_core_showcase_response
+from .experience_brief_surface import build_experience_brief_payload
+from .consumer_shell_surface import build_consumer_shell_payload
+from .dashboard_shell_surface import build_dashboard_shell_payload
 from .hygiene.transitions import transition_memory
+from .memory.weaver import WeaverBeast
+from .retrieval.compressed_tier import build_compressed_tier_payload
 from .ux.telemetry import AegisTelemetry
 from .ux.i18n import get_text
 from .ux.health import MemoryHealthSnapshot
@@ -283,125 +292,14 @@ class AegisApp:
         **kwargs,
     ) -> Dict[str, Any]:
         """Explains whether an ingest attempt would admit, deduplicate, or be blocked."""
-        engine = self.ingest_engine
-        if not engine.filter.is_worthy(content):
-            return {
-                "outcome": "not_worthy",
-                "reason_code": "filtered_not_worthy",
-                "reasons": ["filtered_not_worthy"],
-                "scope_type": scope_type,
-                "scope_id": scope_id,
-                "subject": kwargs.get("subject"),
-                "promotable": False,
-                "target_state": None,
-            }
-
-        metadata = dict(kwargs.get("metadata", {}) or {})
-        if engine.correction_detector.is_correction(content):
-            metadata["is_correction"] = True
-
-        existing_exact = self.storage.fetch_one(
-            "SELECT id FROM memories WHERE content = ? AND scope_id = ? AND scope_type = ? LIMIT 1",
-            (content, scope_id, scope_type),
-        )
-        if existing_exact:
-            return {
-                "outcome": "exact_dedup",
-                "reason_code": "exact_content_scope_match",
-                "reasons": ["exact_content_scope_match"],
-                "scope_type": scope_type,
-                "scope_id": scope_id,
-                "subject": kwargs.get("subject"),
-                "exact_duplicate_id": existing_exact["id"],
-                "promotable": True,
-                "target_state": "validated",
-            }
-
-        resolved_type = type
-        if resolved_type is None:
-            resolved_type = engine.lane_classifier.infer(
-                content=content,
-                session_id=kwargs.get("session_id"),
-                source_kind=source_kind,
-            )
-
-        subject = kwargs.get("subject") or engine.content_extractor.derive_subject(content)
-        summary = kwargs.get("summary") or engine.content_extractor.derive_summary(content)
-        subject = engine.subject_normalizer.normalize(subject)
-
-        confidence = kwargs.get("confidence")
-        activation_score = kwargs.get("activation_score")
-        if confidence is None or activation_score is None:
-            score_profile = engine.write_time_scorer.build_profile(
-                content=content,
-                memory_type=resolved_type,
-                source_kind=source_kind,
-            )
-            inferred_confidence, inferred_activation = engine.write_time_scorer.infer(
-                content=content,
-                memory_type=resolved_type,
-                source_kind=source_kind,
-            )
-            if confidence is None:
-                confidence = inferred_confidence
-            if activation_score is None:
-                activation_score = inferred_activation
-        else:
-            score_profile = engine.write_time_scorer.build_profile(
-                content=content,
-                memory_type=resolved_type,
-                source_kind=source_kind,
-            )
-
-        diagnostic_metadata = dict(metadata)
-        diagnostic_metadata["score_profile"] = score_profile
-        entities = engine.entity_extractor.extract(content=content, subject=subject)
-        if entities:
-            diagnostic_metadata["entities"] = entities
-        diagnostic_metadata.setdefault(
-            "evidence",
-            {
-                "event_id": "diagnostic://synthetic-evidence",
-                "kind": "synthetic_diagnostic",
-                "source_kind": source_kind,
-                "source_ref": kwargs.get("source_ref"),
-                "captured_at": "diagnostic",
-            },
-        )
-
-        memory = engine.factory.create(
-            type=resolved_type,
+        return self.ingest_engine.diagnose_attempt(
             content=content,
+            type=type,
             scope_type=scope_type,
             scope_id=scope_id,
             source_kind=source_kind,
-            metadata=diagnostic_metadata,
-            subject=subject,
-            summary=summary,
-            confidence=confidence,
-            activation_score=activation_score,
-            session_id=kwargs.get("session_id"),
-            source_ref=kwargs.get("source_ref"),
+            **kwargs,
         )
-        candidate = engine.build_candidate(memory)
-        decision = engine.evaluate_candidate(candidate)
-        blocked_reasons = [reason for reason in decision.reasons if reason.startswith("blocked_")]
-
-        return {
-            "outcome": "admit" if decision.promotable else "policy_block",
-            "reason_code": blocked_reasons[0] if blocked_reasons else "promotion_allowed",
-            "reasons": list(decision.reasons),
-            "scope_type": scope_type,
-            "scope_id": scope_id,
-            "subject": subject,
-            "promotable": decision.promotable,
-            "target_state": decision.target_state,
-            "confidence": float(confidence or 0.0),
-            "activation_score": float(activation_score or 0.0),
-            "contradiction_risk": candidate.contradiction_risk,
-            "policy_name": decision.policy_name,
-            "score_profile": score_profile,
-        }
 
     def search(
         self,
@@ -510,12 +408,14 @@ class AegisApp:
         before = self.storage.fetch_one("SELECT COUNT(*) AS count FROM conflicts")
         links_before = self.storage.count_links_by_type(link_type="same_subject")
         typed_links_before = self.storage.count_links_by_type(link_type="procedural_supports_semantic")
+        diplocaulus = AxolotlBeast(self.storage).validate_integrity()
 
         # Rebuild should harden derived fields and restore bounded structure without
         # merging or superseding memories as a side effect.
         self.storage.archive_expired()
         evidence_backfilled = self._backfill_missing_evidence()
         derived_hardened = self._backfill_missing_derived_fields()
+        compressed_backfilled = self._backfill_missing_compressed_tier()
         self._scan_active_subject_conflicts()
         linked = self._backfill_same_subject_links()
         typed_linked = self._backfill_procedural_semantic_links()
@@ -529,12 +429,17 @@ class AegisApp:
             "conflicts_after": after["count"] if after else 0,
             "evidence_backfilled": evidence_backfilled,
             "derived_fields_hardened": derived_hardened,
+            "compressed_tier_backfilled": compressed_backfilled,
             "same_subject_links_before": links_before,
             "same_subject_links_after": links_after,
             "same_subject_links_added": linked,
             "procedural_semantic_links_before": typed_links_before,
             "procedural_semantic_links_after": typed_links_after,
             "procedural_semantic_links_added": typed_linked,
+            "schema_repaired": diplocaulus.schema_repaired,
+            "fts_rebuilt": diplocaulus.fts_rebuilt,
+            "orphan_links_removed": diplocaulus.orphan_links_removed,
+            "diplocaulus_regeneration_score": diplocaulus.diplocaulus_regeneration_score,
         }
 
     def scan(self) -> Dict[str, Any]:
@@ -763,8 +668,21 @@ class AegisApp:
         """Return engine status and high-level counters."""
         return self.health_surface.status()
 
-    def storage_footprint(self) -> dict[str, Any]:
-        return self.operator_surface.storage_footprint()
+    def storage_footprint(
+        self,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self.operator_surface.storage_footprint(scope_type=scope_type, scope_id=scope_id)
+
+    def compressed_tier_status(
+        self,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self.operator_surface.compressed_tier_status(scope_type=scope_type, scope_id=scope_id)
 
     def _safe_storage_footprint(self) -> dict[str, Any]:
         return self.health_surface.safe_storage_footprint()
@@ -1686,6 +1604,7 @@ class AegisApp:
         elif scope_id is None and scope_type is not None:
             raise ValueError("scope_type and scope_id must both be provided for profiles.")
         prefs = self.get_preferences(scope_id, scope_type)
+        identity_report = self.pref_manager.build_identity_report(scope_id, scope_type)
         
         # 1. Fetch recent important facts (top activation)
         search_res = self.search("", scope_id=scope_id, scope_type=scope_type, limit=5)
@@ -1701,6 +1620,25 @@ class AegisApp:
                 else:
                     lines.append(f"- {k.title()}: {v}")
             lines.append("")
+
+        lines.append("### Dire Wolf Identity")
+        lines.append(
+            f"- Persistence: {identity_report['dire_wolf_identity_persistence']:.2f}"
+        )
+        if identity_report["dire_wolf_identity_persistence"] >= 0.8:
+            lines.append("- Pack Stability: Strong")
+        elif identity_report["dire_wolf_identity_persistence"] >= 0.6:
+            lines.append("- Pack Stability: Forming")
+        else:
+            lines.append("- Pack Stability: Fragile")
+        lines.append(f"- Stable Honorific Signals: {identity_report['stable_honorifics']}")
+        if identity_report["categorical_keys"]:
+            lines.append(
+                "- Stable Keys: " + ", ".join(identity_report["categorical_keys"])
+            )
+        if prefs and isinstance(prefs, dict) and prefs.get("preferred_format"):
+            lines.append(f"- Identity-Guided Format Hint: prefer {prefs['preferred_format']}")
+        lines.append("")
             
         if search_res:
             lines.append("### Core Knowledge & Persona")
@@ -2007,25 +1945,17 @@ class AegisApp:
         source_kind, source_ref = self._default_consumer_provenance()
         session_id = f"session_{uuid.uuid4().hex[:8]}"
         observation = ObservedOperation(self.observability, tool="memory_correct", scope_type=scope_type, scope_id=scope_id, session_id=session_id)
-        # Intelligently resolve subject by searching for existing matches first
-        # This ensures we hit the same-subject conflict/correction logic
-        existing = []
-        for candidate_scope_type, candidate_scope_id in self._consumer_scope_candidates():
-            existing = self.search(
-                content,
-                scope_id=candidate_scope_id,
-                scope_type=candidate_scope_type,
-                limit=1,
-                fallback_to_or=True,
-            )
-            if existing:
-                scope_type, scope_id = candidate_scope_type, candidate_scope_id
-                break
-        target_subject = None
-        old_memory_id = None
-        if existing:
-            target_subject = existing[0].memory.subject
-            old_memory_id = existing[0].memory.id
+        correction_target = resolve_correction_target(
+            content,
+            default_scope_type=scope_type,
+            default_scope_id=scope_id,
+            scope_candidates=self._consumer_scope_candidates(),
+            search_fn=self.search,
+        )
+        scope_type = correction_target.scope_type
+        scope_id = correction_target.scope_id
+        target_subject = correction_target.subject
+        old_memory_id = correction_target.old_memory_id
 
         # We pass is_correction=True in metadata to trigger existing correction logic
         mem = self.put_memory(
@@ -2338,15 +2268,152 @@ class AegisApp:
         memory_id = top.memory.id
         payload = build_core_showcase_payload(
             top,
+            scope_geometry=showcase_query.argentinosaurus_scope_geometry,
             evidence=self.operator_surface.get_memory_evidence(memory_id),
             governance=self.operator_surface.inspect_governance(memory_id=memory_id, limit=10),
             neighbors=self.operator_surface.memory_neighbors(memory_id, limit=5),
+            topology=WeaverBeast(self.storage).build_topology_report(memory_id),
+            taxonomy=BowerbirdBeast(self.storage).build_taxonomy_report(),
             v10_signals=self.operator_surface.v10_core_signals(memory_id),
             transition_gate=self.operator_surface.v10_transition_gate(memory_id),
             health=self.memory_health_snapshot(scope_type=st, scope_id=sid),
+            storage_footprint=self.storage_footprint(scope_type=st, scope_id=sid),
             locale=self.locale,
         )
         return build_core_showcase_response(query, scope_type=st, scope_id=sid, payload=payload)
+
+    def experience_brief(
+        self,
+        query: str,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        limit: int = 3,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> dict[str, Any]:
+        st = scope_type or DEFAULT_CONSUMER_SCOPE_TYPE
+        sid = scope_id or DEFAULT_CONSUMER_SCOPE_ID
+        showcase = self.core_showcase(
+            query,
+            scope_type=st,
+            scope_id=sid,
+            limit=limit,
+            include_global=include_global,
+            semantic=semantic,
+            semantic_model=semantic_model,
+            intent=intent,
+        )
+        profile_text = self.render_profile(scope_id=sid, scope_type=st)
+        doctor = self.doctor()
+        doctor_summary = self.doctor_summary()
+        compressed_status = self.compressed_tier_status(scope_type=st, scope_id=sid)
+        return build_experience_brief_payload(
+            query=query,
+            scope_type=st,
+            scope_id=sid,
+            showcase_response=showcase,
+            profile_text=profile_text,
+            doctor=doctor,
+            doctor_summary=doctor_summary,
+            compressed_status=compressed_status,
+        )
+
+    def consumer_shell(
+        self,
+        query: str | None = None,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        workspace_dir: str | None = None,
+        limit: int = 3,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> dict[str, Any]:
+        st = scope_type or DEFAULT_CONSUMER_SCOPE_TYPE
+        sid = scope_id or DEFAULT_CONSUMER_SCOPE_ID
+        effective_query = query or "What should TruthKeep remember or correct right now?"
+        experience_brief = self.experience_brief(
+            effective_query,
+            scope_type=st,
+            scope_id=sid,
+            limit=limit,
+            include_global=include_global,
+            semantic=semantic,
+            semantic_model=semantic_model,
+            intent=intent,
+        )
+        onboarding = self.onboarding(workspace_dir=workspace_dir)
+        status_summary = self.status_summary()
+        return build_consumer_shell_payload(
+            query=effective_query,
+            scope_type=st,
+            scope_id=sid,
+            public_surface=self.public_surface(),
+            onboarding=onboarding,
+            status_summary=status_summary,
+            experience_brief=experience_brief,
+        )
+
+    def dashboard_shell(
+        self,
+        query: str | None = None,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        workspace_dir: str | None = None,
+        limit: int = 3,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> dict[str, Any]:
+        st = scope_type or DEFAULT_CONSUMER_SCOPE_TYPE
+        sid = scope_id or DEFAULT_CONSUMER_SCOPE_ID
+        effective_query = query or "What should TruthKeep remember or correct right now?"
+        consumer_shell = self.consumer_shell(
+            effective_query,
+            scope_type=st,
+            scope_id=sid,
+            workspace_dir=workspace_dir,
+            limit=limit,
+            include_global=include_global,
+            semantic=semantic,
+            semantic_model=semantic_model,
+            intent=intent,
+        )
+        experience_brief = self.experience_brief(
+            effective_query,
+            scope_type=st,
+            scope_id=sid,
+            limit=limit,
+            include_global=include_global,
+            semantic=semantic,
+            semantic_model=semantic_model,
+            intent=intent,
+        )
+        core_showcase = self.core_showcase(
+            effective_query,
+            scope_type=st,
+            scope_id=sid,
+            limit=limit,
+            include_global=include_global,
+            semantic=semantic,
+            semantic_model=semantic_model,
+            intent=intent,
+        )
+        return build_dashboard_shell_payload(
+            query=effective_query,
+            scope_type=st,
+            scope_id=sid,
+            consumer_shell=consumer_shell,
+            experience_brief=experience_brief,
+            core_showcase=core_showcase,
+        )
 
     def _resolve_memory_reference(self, rel_path: str):
         memory_id = rel_path
@@ -2441,6 +2508,34 @@ class AegisApp:
                 updates,
             )
         return len(updates)
+
+    def _backfill_missing_compressed_tier(self) -> int:
+        rows = self.storage.fetch_all(
+            """
+            SELECT id, content, summary, subject, status, activation_score, metadata_json
+            FROM memories
+            WHERE metadata_json IS NULL
+               OR metadata_json = ''
+               OR metadata_json NOT LIKE '%compressed_tier%'
+            """
+        )
+        updated = 0
+        for row in rows:
+            metadata = self.storage._coerce_metadata(row["metadata_json"])
+            metadata["compressed_tier"] = build_compressed_tier_payload(
+                content=row["content"],
+                summary=row["summary"],
+                subject=row["subject"],
+                status=row["status"],
+                activation_score=float(row["activation_score"] or 0.0),
+                metadata=metadata,
+            )
+            self.storage.execute(
+                "UPDATE memories SET metadata_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (json.dumps(metadata, ensure_ascii=True), row["id"]),
+            )
+            updated += 1
+        return updated
 
     def _backfill_missing_evidence(self) -> int:
         rows = self.storage.fetch_all(

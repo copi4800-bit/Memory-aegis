@@ -122,3 +122,51 @@ class LibrarianBeast:
         master["activation_score"] = new_activation
         master["access_count"] = new_access_count
         master["metadata_json"] = master_metadata
+
+    def build_index_locality_report(self, scope_type: str, scope_id: str) -> Dict[str, Any]:
+        rows = self.storage.fetch_all(
+            """
+            SELECT subject, COUNT(*) AS count
+            FROM memories
+            WHERE scope_type = ? AND scope_id = ? AND subject IS NOT NULL
+            GROUP BY subject
+            ORDER BY count DESC, subject ASC
+            """,
+            (scope_type, scope_id),
+        )
+        subject_count = len(rows)
+        densest_cluster = int(rows[0]["count"]) if rows else 0
+        avg_cluster = 0.0 if not rows else sum(int(row["count"]) for row in rows) / len(rows)
+        titanoboa_index_locality = min(
+            0.99,
+            0.3 + (min(densest_cluster, 6) * 0.08) + (min(avg_cluster, 4.0) * 0.06),
+        )
+        return {
+            "subject_count": subject_count,
+            "densest_cluster": densest_cluster,
+            "average_cluster_size": round(avg_cluster, 3),
+            "titanoboa_index_locality": round(titanoboa_index_locality, 3),
+        }
+
+    def build_subject_locality_report(self, scope_type: str, scope_id: str, subject: str | None) -> Dict[str, Any]:
+        if not subject:
+            return {
+                "subject": subject,
+                "cluster_size": 0,
+                "titanoboa_subject_locality": 0.0,
+            }
+        row = self.storage.fetch_one(
+            """
+            SELECT COUNT(*) AS count
+            FROM memories
+            WHERE scope_type = ? AND scope_id = ? AND subject = ?
+            """,
+            (scope_type, scope_id, subject),
+        )
+        cluster_size = int(row["count"]) if row else 0
+        locality = min(0.99, 0.22 + (min(cluster_size, 6) * 0.11))
+        return {
+            "subject": subject,
+            "cluster_size": cluster_size,
+            "titanoboa_subject_locality": round(locality, 3),
+        }

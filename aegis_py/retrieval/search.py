@@ -5,7 +5,11 @@ from ..storage.models import RETRIEVABLE_MEMORY_STATUS_SQL
 from .engine import run_scoped_search
 from .oracle import OracleBeast
 from ..memory.core import MemoryManager
+from ..memory.weaver import WeaverBeast
 from ..storage.manager import StorageManager
+from ..hygiene.librarian import LibrarianBeast
+from ..hygiene.nutcracker import NutcrackerBeast
+from ..preferences.manager import PreferenceManager
 
 # Phase 2: Aegis v10 Core Integration
 from ..v10_scoring.adapter import map_to_v10_record
@@ -32,6 +36,10 @@ class SearchPipeline:
         self.storage = storage
         self.manager = MemoryManager(storage)
         self.oracle = OracleBeast(storage)
+        self.weaver = WeaverBeast(storage)
+        self.librarian = LibrarianBeast(storage)
+        self.nutcracker = NutcrackerBeast(storage)
+        self.preference_manager = PreferenceManager(storage)
         self.v10_scorer = ResidualScorer()
         self.v10_engine = GovernanceEngineV10(storage, scorer=self.v10_scorer)
         self.v10_registry = TruthRegistryV10(storage)
@@ -155,6 +163,8 @@ class SearchPipeline:
 
         # Final Slot Resolution
         self.v10_registry.resolve_slot_ownership(raw_candidates, intent=getattr(query_obj, "intent", "normal_recall") if query_obj else "normal_recall")
+        self._apply_tyrannosaurus_dominance(raw_candidates)
+        self._apply_prehistoric_judged_recall_pressure(raw_candidates, query_obj=query_obj)
 
         # --- v10 Final Admissibility Filtering ---
         final_results: List[SearchResult] = []
@@ -181,6 +191,184 @@ class SearchPipeline:
             final_results[0].suppressed_candidates = suppressed[:3]
 
         return final_results
+
+    def _apply_prehistoric_judged_recall_pressure(self, raw_candidates: list[SearchResult], *, query_obj: SearchQuery | None = None) -> None:
+        scope_context = self._build_prehistoric_scope_context(query_obj)
+        topology_cache: dict[str, dict[str, Any]] = {}
+        subject_locality_cache: dict[str, dict[str, Any]] = {}
+        for result in raw_candidates:
+            decision = getattr(result, "v10_decision", None)
+            trace = getattr(result, "v10_trace", None)
+            if decision is None or trace is None or not decision.admissible:
+                continue
+
+            reasons = list(getattr(result, "reasons", []) or [])
+            pressure = 0.0
+
+            utah_ratio = self._extract_reason_float(reasons, "utahraptor_lexical_pursuit:")
+            if utah_ratio >= 0.85:
+                pressure += 0.03
+                trace.factors["utahraptor_judged_pressure"] = round(0.03, 6)
+                decision.decision_reason.append("utahraptor_judged_pressure")
+            elif utah_ratio >= 0.55:
+                pressure += 0.015
+                trace.factors["utahraptor_judged_pressure"] = round(0.015, 6)
+                decision.decision_reason.append("utahraptor_judged_pressure")
+
+            basilosaurus_terms = self._extract_reason_terms(reasons, "basilosaurus_semantic_echo:")
+            if len(basilosaurus_terms) >= 3:
+                pressure += 0.025
+                trace.factors["basilosaurus_judged_pressure"] = round(0.025, 6)
+                decision.decision_reason.append("basilosaurus_judged_pressure")
+            elif len(basilosaurus_terms) >= 1:
+                pressure += 0.012
+                trace.factors["basilosaurus_judged_pressure"] = round(0.012, 6)
+                decision.decision_reason.append("basilosaurus_judged_pressure")
+
+            if result.retrieval_stage == "link_expansion" and result.relation_via_link_type in {"supports", "procedural_supports_semantic"}:
+                pterodactyl_boost = 0.02 if (result.relation_via_hops or 0) <= 1 else 0.01
+                pressure += pterodactyl_boost
+                trace.factors["pterodactyl_judged_pressure"] = round(pterodactyl_boost, 6)
+                decision.decision_reason.append("pterodactyl_judged_pressure")
+
+            if decision.policy_trace and decision.truth_role.value == "winner":
+                pressure += 0.01
+                trace.factors["paraceratherium_judged_pressure"] = round(0.01, 6)
+                decision.decision_reason.append("paraceratherium_judged_pressure")
+
+            if (
+                query_obj is not None
+                and getattr(query_obj, "scope_type", None)
+                and getattr(query_obj, "scope_id", None)
+                and result.memory.scope_type == getattr(query_obj, "scope_type", None)
+                and result.memory.scope_id == getattr(query_obj, "scope_id", None)
+            ):
+                pressure += 0.008
+                trace.factors["argentinosaurus_judged_pressure"] = round(0.008, 6)
+                decision.decision_reason.append("argentinosaurus_judged_pressure")
+
+            glyptodon_shell = float((result.memory.metadata or {}).get("glyptodon_consolidation_shell", 0.0) or 0.0)
+            if glyptodon_shell >= 0.78:
+                pressure += 0.018
+                trace.factors["glyptodon_judged_pressure"] = round(0.018, 6)
+                decision.decision_reason.append("glyptodon_judged_pressure")
+            elif glyptodon_shell >= 0.55:
+                pressure += 0.009
+                trace.factors["glyptodon_judged_pressure"] = round(0.009, 6)
+                decision.decision_reason.append("glyptodon_judged_pressure")
+
+            topology = topology_cache.get(result.memory.id)
+            if topology is None:
+                topology = self.weaver.build_topology_report(result.memory.id)
+                topology_cache[result.memory.id] = topology
+            megarachne_strength = float(topology.get("megarachne_topology_strength", 0.0) or 0.0)
+            if megarachne_strength >= 0.6:
+                pressure += 0.014
+                trace.factors["megarachne_judged_pressure"] = round(0.014, 6)
+                decision.decision_reason.append("megarachne_judged_pressure")
+
+            locality_key = f"{result.memory.scope_type}:{result.memory.scope_id}:{result.memory.subject or ''}"
+            subject_locality = subject_locality_cache.get(locality_key)
+            if subject_locality is None:
+                subject_locality = self.librarian.build_subject_locality_report(
+                    result.memory.scope_type,
+                    result.memory.scope_id,
+                    result.memory.subject,
+                )
+                subject_locality_cache[locality_key] = subject_locality
+            titanoboa_locality = float(subject_locality.get("titanoboa_subject_locality", 0.0) or 0.0)
+            if titanoboa_locality >= 0.55:
+                pressure += 0.012
+                trace.factors["titanoboa_judged_pressure"] = round(0.012, 6)
+                decision.decision_reason.append("titanoboa_judged_pressure")
+
+            dire_wolf_identity = float(scope_context.get("dire_wolf_identity_persistence", 0.0) or 0.0)
+            if (
+                dire_wolf_identity >= 0.72
+                and query_obj is not None
+                and result.memory.scope_type == getattr(query_obj, "scope_type", None)
+                and result.memory.scope_id == getattr(query_obj, "scope_id", None)
+            ):
+                pressure += 0.01
+                trace.factors["dire_wolf_judged_pressure"] = round(0.01, 6)
+                decision.decision_reason.append("dire_wolf_judged_pressure")
+
+            deinosuchus_pressure = float(scope_context.get("deinosuchus_compaction_pressure", 0.0) or 0.0)
+            if deinosuchus_pressure >= 0.35:
+                activation = float(result.memory.activation_score or 0.0)
+                if activation >= 0.72:
+                    pressure += 0.01
+                    trace.factors["deinosuchus_judged_pressure"] = round(0.01, 6)
+                    decision.decision_reason.append("deinosuchus_judged_pressure")
+                elif activation < 0.35:
+                    pressure -= 0.01
+                    trace.factors["deinosuchus_judged_pressure"] = round(-0.01, 6)
+                    decision.decision_reason.append("deinosuchus_judged_pressure")
+
+            if pressure > 0.0:
+                result.v10_score = round(float(getattr(result, "v10_score", 0.0) or 0.0) + pressure, 6)
+                trace.factors["prehistoric_judged_recall_pressure"] = round(pressure, 6)
+                trace.factors["final_score"] = round(result.v10_score, 6)
+            elif pressure < 0.0:
+                result.v10_score = round(float(getattr(result, "v10_score", 0.0) or 0.0) + pressure, 6)
+                trace.factors["prehistoric_judged_recall_pressure"] = round(pressure, 6)
+                trace.factors["final_score"] = round(result.v10_score, 6)
+
+    def _build_prehistoric_scope_context(self, query_obj: SearchQuery | None) -> dict[str, Any]:
+        if query_obj is None:
+            return {}
+        scope_type = getattr(query_obj, "scope_type", None)
+        scope_id = getattr(query_obj, "scope_id", None)
+        if not scope_type or not scope_id:
+            return {}
+        identity = self.preference_manager.build_identity_report(scope_id, scope_type)
+        compaction = self.nutcracker.check_scope_health(scope_type, scope_id)
+        return {
+            "dire_wolf_identity_persistence": identity.get("dire_wolf_identity_persistence", 0.0),
+            "deinosuchus_compaction_pressure": compaction.get("deinosuchus_compaction_pressure", 0.0),
+        }
+
+    def _extract_reason_float(self, reasons: list[str], prefix: str) -> float:
+        for reason in reasons:
+            if reason.startswith(prefix):
+                try:
+                    return float(reason.split(":", 1)[1])
+                except (TypeError, ValueError):
+                    return 0.0
+        return 0.0
+
+    def _extract_reason_terms(self, reasons: list[str], prefix: str) -> list[str]:
+        for reason in reasons:
+            if reason.startswith(prefix):
+                return [item for item in reason.split(":", 1)[1].split(",") if item]
+        return []
+
+    def _apply_tyrannosaurus_dominance(self, raw_candidates: list[SearchResult]) -> None:
+        groups: dict[str, list[SearchResult]] = {}
+        for result in raw_candidates:
+            group_key = result.memory.subject or result.memory.id
+            groups.setdefault(group_key, []).append(result)
+
+        for group_results in groups.values():
+            if len(group_results) < 2:
+                continue
+            ordered = sorted(group_results, key=lambda item: getattr(item, "v10_score", 0.0), reverse=True)
+            top = ordered[0]
+            runner_up = ordered[1]
+            top_decision = getattr(top, "v10_decision", None)
+            if top_decision is None or top_decision.truth_role.value != "winner":
+                continue
+
+            base_top_score = float(getattr(top, "v10_score", 0.0) or 0.0)
+            runner_up_score = float(getattr(runner_up, "v10_score", 0.0) or 0.0)
+            margin = max(0.0, base_top_score - runner_up_score)
+            dominance_boost = min(0.18, 0.05 + margin * 0.35)
+            top.v10_score = round(base_top_score + dominance_boost, 6)
+            if top.v10_trace is not None:
+                top.v10_trace.factors["tyrannosaurus_margin"] = round(margin, 6)
+                top.v10_trace.factors["tyrannosaurus_dominance_boost"] = round(dominance_boost, 6)
+                top.v10_trace.factors["final_score"] = round(top.v10_score, 6)
+            top.v10_decision.decision_reason.append("trex_dominance_boost")
 
     def track_access(self, result: SearchResult):
         self.storage.reinforce_memory(result.memory.id)

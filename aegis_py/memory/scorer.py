@@ -27,6 +27,9 @@ class WriteTimeScorer:
             memory_type=memory_type,
             source_kind=source_kind,
         )
+        decisive_pressure = profile["dunkleosteus_decisive_pressure"]
+        conflict_sentinel_score = profile["thylacoleo_conflict_sentinel_score"]
+        meganeura_capture_span = profile["meganeura_capture_span"]
         ambiguity_noise = profile["ambiguity_noise"]
         confidence = min(
             max(
@@ -39,6 +42,9 @@ class WriteTimeScorer:
                     + (profile["frequency"] * 0.08)
                     - (profile["conflict_pressure"] * 0.16)
                     - (ambiguity_noise * 0.08)
+                    + (decisive_pressure * 0.06)
+                    + (meganeura_capture_span * 0.04)
+                    - (conflict_sentinel_score * 0.06)
                 ),
                 0.55,
             ),
@@ -50,6 +56,10 @@ class WriteTimeScorer:
             confidence += 0.03
         if profile["evidence_completeness"] >= 0.88 and ambiguity_noise <= 0.2:
             confidence += 0.02
+        if decisive_pressure >= 0.84:
+            confidence += 0.02
+        if meganeura_capture_span >= 0.8:
+            confidence += 0.015
         activation = min(
             max(
                 (
@@ -60,6 +70,9 @@ class WriteTimeScorer:
                     + (profile["frequency"] * 0.15)
                     - (profile["conflict_pressure"] * 0.12)
                     - (ambiguity_noise * 0.1)
+                    + (decisive_pressure * 0.05)
+                    + (meganeura_capture_span * 0.06)
+                    - (conflict_sentinel_score * 0.04)
                 ),
                 0.78,
             ),
@@ -69,6 +82,10 @@ class WriteTimeScorer:
             activation += 0.08
         if any(marker in normalized for marker in ("1.", "2.", "steps", "how to", "procedure", "must", "requires")):
             activation += 0.08
+        if decisive_pressure >= 0.84:
+            activation += 0.03
+        if meganeura_capture_span >= 0.8:
+            activation += 0.03
         if 0.96 <= activation <= 1.04:
             activation = 1.0
         return round(confidence, 3), round(activation, 3)
@@ -152,6 +169,32 @@ class WriteTimeScorer:
         if token_count >= 36:
             ambiguity_noise += 0.05
 
+        dunkleosteus_decisive_pressure = (
+            (source_reliability * 0.28)
+            + (directness * 0.28)
+            + (specificity * 0.18)
+            + (evidence_completeness * 0.18)
+            - (conflict_pressure * 0.12)
+            - (ambiguity_noise * 0.1)
+        )
+        thylacoleo_conflict_sentinel_score = (
+            (conflict_pressure * 0.55)
+            + (ambiguity_noise * 0.25)
+            + (0.12 if has_negation else 0.0)
+            + (0.1 if has_hedging else 0.0)
+            + (0.04 if token_count <= 5 else 0.0)
+        )
+        meganeura_capture_span = (
+            (min(token_count, 28) / 28.0) * 0.42
+            + (min(sentence_count, 3) / 3.0) * 0.1
+            + (min(digits_count, 6) / 6.0) * 0.08
+            + (0.14 if has_temporal_detail else 0.0)
+            + (0.14 if has_example_detail else 0.0)
+            + (0.08 if has_list_markers else 0.0)
+            + (0.07 if has_modality else 0.0)
+            - (ambiguity_noise * 0.06)
+        )
+
         return {
             "source_reliability": self._clamp(source_reliability, 0.3, 0.99),
             "recency": self._clamp(recency, 0.3, 0.99),
@@ -161,4 +204,7 @@ class WriteTimeScorer:
             "ambiguity_noise": self._clamp(ambiguity_noise, 0.0, 0.95),
             "frequency": self._clamp(frequency, 0.2, 0.95),
             "conflict_pressure": self._clamp(conflict_pressure, 0.0, 0.95),
+            "dunkleosteus_decisive_pressure": self._clamp(dunkleosteus_decisive_pressure, 0.0, 0.99),
+            "thylacoleo_conflict_sentinel_score": self._clamp(thylacoleo_conflict_sentinel_score, 0.0, 0.99),
+            "meganeura_capture_span": self._clamp(meganeura_capture_span, 0.0, 0.99),
         }

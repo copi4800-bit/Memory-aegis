@@ -59,8 +59,15 @@ def test_spotlight_surface_formats_truth_and_why_not(runtime_harness):
     assert payload["selected_memory"] == serialized["memory"]["content"]
     assert payload["truth_state"]["governance_status"] == "active"
     assert payload["truth_state"]["truth_role"] == "winner"
+    assert "paraceratherium_trace" in payload
+    assert "retrieval_predators" in payload
+    assert payload["paraceratherium_trace"]["headline"] == "winner / active"
+    assert payload["paraceratherium_trace"]["policy_step_count"] >= 1
     assert any(item["id"] == "spot_old" for item in payload["why_not"])
     assert "[Selected Result]" in rendered
+    assert "[Paraceratherium Trace]" in rendered
+    assert "[Retrieval Predators]" in rendered
+    assert "pterodactyl_graph_overview" in payload["retrieval_predators"]
     assert "[Why Not]" in rendered
 
     response = build_spotlight_response(
@@ -122,6 +129,8 @@ def test_memory_spotlight_tool_returns_runtime_response(tmp_path):
 
         assert payload["result_count"] == 1
         assert payload["results"][0]["truth_state"]["governance_status"] == "active"
+        assert "retrieval_predators" in payload["results"][0]
+        assert "utahraptor_band" in payload["results"][0]["retrieval_predators"]
         assert "Correction: the deployment window moved to Tuesday." == payload["results"][0]["selected_memory"]
         assert "[Selected Result]" in payload["spotlight_text"]
     finally:

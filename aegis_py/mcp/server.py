@@ -262,6 +262,85 @@ class AegisMCPServer:
             )
         )
 
+    def memory_experience_brief(
+        self,
+        query: str,
+        *,
+        limit: int = 3,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> str:
+        return self._to_json(
+            self.app.experience_brief(
+                query,
+                limit=limit,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                include_global=include_global,
+                semantic=semantic,
+                semantic_model=semantic_model,
+                intent=intent,
+            )
+        )
+
+    def memory_consumer_shell(
+        self,
+        query: str | None = None,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        workspace_dir: str | None = None,
+        limit: int = 3,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> str:
+        return self._to_json(
+            self.app.consumer_shell(
+                query,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                workspace_dir=workspace_dir,
+                limit=limit,
+                include_global=include_global,
+                semantic=semantic,
+                semantic_model=semantic_model,
+                intent=intent,
+            )
+        )
+
+    def memory_dashboard_shell(
+        self,
+        query: str | None = None,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        workspace_dir: str | None = None,
+        limit: int = 3,
+        include_global: bool = False,
+        semantic: bool = False,
+        semantic_model: str | None = None,
+        intent: str | None = None,
+    ) -> str:
+        return self._to_json(
+            self.app.dashboard_shell(
+                query,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                workspace_dir=workspace_dir,
+                limit=limit,
+                include_global=include_global,
+                semantic=semantic,
+                semantic_model=semantic_model,
+                intent=intent,
+            )
+        )
+
     def memory_registry(self) -> str:
         return self._to_json({"backend": "python", "tools": TOOL_REGISTRY})
 
@@ -418,6 +497,13 @@ class AegisMCPServer:
             }
         )
 
+    def memory_compressed_tier_status(
+        self,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+    ) -> str:
+        return self._to_json(self.app.compressed_tier_status(scope_type=scope_type, scope_id=scope_id))
+
     def memory_storage_compact(
         self,
         *,
@@ -453,7 +539,74 @@ class AegisMCPServer:
     def memory_forget(self, query: str) -> str:
         return self.app.memory_forget(query)
 
+    def _megalith_required_args(self, tool_name: str) -> tuple[str, ...]:
+        return {
+            "memory_store": ("content",),
+            "memory_search": ("text",),
+            "memory_context_pack": ("text",),
+            "memory_conflict_resolve": ("conflict_id", "action"),
+            "memory_link_store": ("source_id", "target_id", "link_type"),
+            "memory_link_neighbors": ("memory_id",),
+            "memory_get": ("rel_path",),
+            "memory_spotlight": ("query",),
+            "memory_core_showcase": ("query",),
+            "memory_experience_brief": ("query",),
+            "memory_consumer_shell": (),
+            "memory_dashboard_shell": (),
+            "memory_sync_preview": ("envelope_path",),
+            "memory_sync_import": ("envelope_path",),
+            "memory_vector_inspect": ("query",),
+            "memory_remember": ("content",),
+            "memory_recall": ("query",),
+            "memory_correct": ("content",),
+            "memory_forget": ("query",),
+        }.get(tool_name, ())
+
+    def _megatherium_boundary_report(self, tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+        registry_known = tool_name in TOOL_REGISTRY or tool_name in {"memory_status", "memory_registry", "service_info", "startup_probe", "memory_export"}
+        required_args = self._megalith_required_args(tool_name)
+        missing_required = [key for key in required_args if not args.get(key)]
+        provided_args = sorted(args.keys()) if isinstance(args, dict) else []
+        known_optional = {
+            "scope_type", "scope_id", "include_global", "limit", "semantic", "semantic_model",
+            "intent", "retrieval_mode", "type", "content", "subject", "source_kind", "source_ref",
+            "summary", "session_id", "memory_id", "workspace_dir", "lines", "from", "rel_path",
+            "snapshot_path", "format", "text", "query", "mode", "sync_policy",
+        }
+        unexpected_args = sorted(
+            key for key in provided_args if key not in set(required_args) | known_optional
+        )
+        scope_pair_valid = not (("scope_type" in args) ^ ("scope_id" in args))
+        gate_score = min(
+            0.99,
+            0.34
+            + (0.26 if registry_known else 0.0)
+            + (0.18 if not missing_required else 0.0)
+            + (0.08 if isinstance(args, dict) else 0.0)
+            + (0.05 if scope_pair_valid else 0.0),
+        )
+        return {
+            "tool_name": tool_name,
+            "registry_known": registry_known,
+            "required_args": required_args,
+            "provided_args": provided_args,
+            "missing_required": missing_required,
+            "unexpected_args": unexpected_args,
+            "scope_pair_valid": scope_pair_valid,
+            "megatherium_boundary_admissibility": round(gate_score, 3),
+        }
+
     def run_tool(self, tool_name: str, args: dict[str, Any]) -> str:
+        boundary = self._megatherium_boundary_report(tool_name, args)
+        if not boundary["registry_known"]:
+            return self._error("tool_not_found", tool=tool_name, megatherium_boundary=boundary)
+        if boundary["missing_required"]:
+            return self._error(
+                "missing_required_args",
+                tool=tool_name,
+                missing=boundary["missing_required"],
+                megatherium_boundary=boundary,
+            )
         if tool_name == "memory_store":
             return self.memory_store(
                 args.get("type"),
@@ -577,6 +730,41 @@ class AegisMCPServer:
                 semantic_model=args.get("semantic_model"),
                 intent=args.get("intent"),
             )
+        if tool_name == "memory_experience_brief":
+            return self.memory_experience_brief(
+                args.get("query"),
+                limit=args.get("limit", 3),
+                scope_type=args.get("scope_type"),
+                scope_id=args.get("scope_id"),
+                include_global=args.get("include_global", False),
+                semantic=args.get("semantic", False),
+                semantic_model=args.get("semantic_model"),
+                intent=args.get("intent"),
+            )
+        if tool_name == "memory_consumer_shell":
+            return self.memory_consumer_shell(
+                args.get("query"),
+                scope_type=args.get("scope_type"),
+                scope_id=args.get("scope_id"),
+                workspace_dir=args.get("workspace_dir"),
+                limit=args.get("limit", 3),
+                include_global=args.get("include_global", False),
+                semantic=args.get("semantic", False),
+                semantic_model=args.get("semantic_model"),
+                intent=args.get("intent"),
+            )
+        if tool_name == "memory_dashboard_shell":
+            return self.memory_dashboard_shell(
+                args.get("query"),
+                scope_type=args.get("scope_type"),
+                scope_id=args.get("scope_id"),
+                workspace_dir=args.get("workspace_dir"),
+                limit=args.get("limit", 3),
+                include_global=args.get("include_global", False),
+                semantic=args.get("semantic", False),
+                semantic_model=args.get("semantic_model"),
+                intent=args.get("intent"),
+            )
         if tool_name == "memory_registry":
             return self.memory_registry()
         if tool_name == "service_info":
@@ -648,6 +836,11 @@ class AegisMCPServer:
             )
         if tool_name == "memory_storage_footprint":
             return self.memory_storage_footprint()
+        if tool_name == "memory_compressed_tier_status":
+            return self.memory_compressed_tier_status(
+                scope_type=args.get("scope_type") or args.get("scopeType"),
+                scope_id=args.get("scope_id") or args.get("scopeId"),
+            )
         if tool_name == "memory_storage_compact":
             return self.memory_storage_compact(
                 archived_memory_days=args.get("archived_memory_days", 30),
@@ -670,7 +863,7 @@ class AegisMCPServer:
             return self.memory_correct(args.get("content"))
         if tool_name == "memory_forget":
             return self.memory_forget(args.get("query"))
-        return self._error("tool_not_found", tool=tool_name)
+        return self._error("tool_not_found", tool=tool_name, megatherium_boundary=boundary)
 
     def close(self) -> None:
         self.app.close()

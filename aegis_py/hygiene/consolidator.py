@@ -76,6 +76,11 @@ class ConsolidatorBeast:
         if loser_id not in corrected_from:
             corrected_from.append(loser_id)
         winner_meta["corrected_from"] = corrected_from
+        glyptodon_consolidation_shell = min(
+            0.99,
+            0.4 + (min(len(corrected_from), 4) * 0.12),
+        )
+        winner_meta["glyptodon_consolidation_shell"] = round(glyptodon_consolidation_shell, 3)
         
         self.storage.execute(
             "UPDATE memories SET metadata_json = ?, updated_at = ? WHERE id = ?",

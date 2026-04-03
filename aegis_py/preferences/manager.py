@@ -70,3 +70,26 @@ class PreferenceManager:
         with self.storage._get_connection() as conn:
             conn.execute("DELETE FROM style_signals WHERE session_id = ?", (session_id,))
             conn.commit()
+
+    def build_identity_report(self, scope_id: str, scope_type: str) -> dict[str, object]:
+        profile = self.storage.get_profile(scope_id, scope_type)
+        prefs = profile.preferences_json if profile else {}
+        categorical_keys = [key for key, value in prefs.items() if not isinstance(value, float)]
+        stable_honorifics = sum(
+            1
+            for key in ("user_honorific", "assistant_honorific", "preferred_format")
+            if prefs.get(key)
+        )
+        numeric_density = sum(1 for value in prefs.values() if isinstance(value, float))
+        dire_wolf_identity_persistence = min(
+            0.99,
+            0.28 + (stable_honorifics * 0.18) + (min(numeric_density, 4) * 0.06) + (min(len(categorical_keys), 4) * 0.05),
+        )
+        return {
+            "scope_id": scope_id,
+            "scope_type": scope_type,
+            "profile_keys": sorted(prefs.keys()),
+            "stable_honorifics": stable_honorifics,
+            "categorical_keys": categorical_keys,
+            "dire_wolf_identity_persistence": round(dire_wolf_identity_persistence, 3),
+        }

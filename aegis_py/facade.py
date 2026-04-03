@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import Any, List, Optional, Dict
 
 from .app import AegisApp
+from .memory.consumer import (
+    prepare_consumer_correction_metadata,
+    prepare_consumer_remember_metadata,
+    resolve_consumer_remember_outcome,
+)
 from .storage.models import Memory
 from .surface import normalize_retrieval_mode
 
@@ -45,28 +50,14 @@ class Aegis:
         Store a new memory. 
         Uses the high-level ingest engine to ensure full v10/v10 processing.
         """
-        metadata = metadata or {}
-        
-        # Facade default: if it's manual user input, it's a winner candidate
-        if "is_winner" not in metadata:
-            metadata["is_winner"] = True
-
-        # Patch A: Slot Collision Detection
-        # If we have a subject and not a correction, check for existing active memories
-        if subject and not metadata.get("is_correction"):
-            active_rows = self._app.storage.fetch_all(
-                "SELECT content FROM memories WHERE subject = ? AND scope_id = ? AND scope_type = ? AND status = 'active'",
-                (subject, scope_id, scope_type)
-            )
-            # If any active memory for this subject has different content, flag as conflict candidate
-            if active_rows and any(row["content"] != content for row in active_rows):
-                metadata["conflict_candidate"] = True
-                metadata["requires_review"] = True
-                # If it's a conflict candidate, maybe it shouldn't be an automatic winner 
-                # to avoid retiring the old one until resolved?
-                # Actually, Patch A says 'detect collision' but still let it in.
-                # In zero-config facade, we might want to keep both active.
-                metadata["is_winner"] = False 
+        metadata = prepare_consumer_remember_metadata(
+            content=content,
+            subject=subject,
+            scope_id=scope_id,
+            scope_type=scope_type,
+            metadata=metadata,
+            fetch_active_contents=self._fetch_active_contents_for_subject,
+        )
 
         # We use app.put_memory which goes through IngestEngine
         # In the facade, we default to manual source and HIGH confidence
@@ -81,27 +72,17 @@ class Aegis:
             activation_score=1.0,
             metadata=metadata
         )
-        
-        # If ingest rejected it (likely duplicate or filtered)
+        remember_outcome = resolve_consumer_remember_outcome(
+            stored_memory_id=mem.id if mem else None,
+            content=content,
+            subject=subject,
+            scope_id=scope_id,
+            scope_type=scope_type,
+            fetch_exact_duplicate_ids=self._fetch_exact_duplicate_ids,
+            fetch_active_ids_by_subject=self._fetch_active_ids_for_subject,
+        )
         if not mem:
-            # 1. Check for exact content duplicate
-            rows = self._app.storage.fetch_all(
-                "SELECT id FROM memories WHERE content = ? AND scope_id = ? AND scope_type = ?",
-                (content, scope_id, scope_type)
-            )
-            if rows:
-                return rows[0]["id"]
-            
-            # 2. Check for same subject "slot" winner if subject was provided
-            if subject:
-                slot_rows = self._app.storage.fetch_all(
-                    "SELECT id FROM memories WHERE subject = ? AND scope_id = ? AND scope_type = ? AND status = 'active'",
-                    (subject, scope_id, scope_type)
-                )
-                if slot_rows:
-                    return slot_rows[0]["id"]
-
-            return "rejected_by_policy"
+            return remember_outcome
             
         # Facade auto-indexes for immediate recall
         try:
@@ -109,7 +90,7 @@ class Aegis:
         except:
             pass
             
-        return mem.id
+        return remember_outcome
 
     def recall(
         self, 
@@ -188,25 +169,14 @@ class Aegis:
         Update an existing memory (Truth Correction).
         Uses Governance-native path via MemoryManager and links.
         """
-        # 1. Find candidates to supersede
-        old_ids = []
-        if subject:
-            rows = self._app.storage.fetch_all(
-                "SELECT id FROM memories WHERE subject = ? AND scope_id = ? AND scope_type = ? AND status = 'active'",
-                (subject, scope_id, scope_type)
-            )
-            old_ids = [row["id"] for row in rows]
-        elif old_content_hint:
-            # Search-based correction
-            search_res = self._app.search(old_content_hint, scope_id=scope_id, scope_type=scope_type, limit=1)
-            old_ids = [r.memory.id for r in search_res if r.score > 0.6]
-
-        # 2. Prepare correction metadata
-        metadata = {
-            "is_correction": True,
-            "is_winner": True,
-            "corrected_from": old_ids # Native path: IngestEngine will retire these
-        }
+        metadata = prepare_consumer_correction_metadata(
+            subject=subject,
+            old_content_hint=old_content_hint,
+            scope_id=scope_id,
+            scope_type=scope_type,
+            fetch_active_ids_by_subject=self._fetch_active_ids_for_subject,
+            search_ids_by_hint=self._search_active_ids_by_hint,
+        )
 
         # 3. Put new winner via native ingest
         new_id = self.remember(
@@ -223,6 +193,31 @@ class Aegis:
         # Actually, let's trust the native path for better governance audit logs.
             
         return new_id
+
+    def _fetch_active_contents_for_subject(self, subject: str, scope_id: str, scope_type: str) -> list[str]:
+        rows = self._app.storage.fetch_all(
+            "SELECT content FROM memories WHERE subject = ? AND scope_id = ? AND scope_type = ? AND status = 'active'",
+            (subject, scope_id, scope_type),
+        )
+        return [row["content"] for row in rows]
+
+    def _fetch_active_ids_for_subject(self, subject: str, scope_id: str, scope_type: str) -> list[str]:
+        rows = self._app.storage.fetch_all(
+            "SELECT id FROM memories WHERE subject = ? AND scope_id = ? AND scope_type = ? AND status = 'active'",
+            (subject, scope_id, scope_type),
+        )
+        return [row["id"] for row in rows]
+
+    def _fetch_exact_duplicate_ids(self, content: str, scope_id: str, scope_type: str) -> list[str]:
+        rows = self._app.storage.fetch_all(
+            "SELECT id FROM memories WHERE content = ? AND scope_id = ? AND scope_type = ?",
+            (content, scope_id, scope_type),
+        )
+        return [row["id"] for row in rows]
+
+    def _search_active_ids_by_hint(self, old_content_hint: str, scope_id: str, scope_type: str) -> list[str]:
+        search_res = self._app.search(old_content_hint, scope_id=scope_id, scope_type=scope_type, limit=1)
+        return [result.memory.id for result in search_res if result.score > 0.6]
 
     def status(self) -> Dict[str, Any]:
         """

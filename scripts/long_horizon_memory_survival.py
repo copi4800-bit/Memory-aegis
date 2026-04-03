@@ -126,6 +126,29 @@ def run_survival_case(app, *, horizon_days: int, noise_count: int, scope_id: str
             (current_iso(), archived.id),
         )
 
+    mammoth_archive = app.put_memory(
+        f"{prefix} durable historical archive that should survive cold compaction.",
+        type="semantic",
+        scope_type="agent",
+        scope_id=scope_id,
+        source_kind="manual",
+        source_ref=f"{prefix}://mammoth-archive",
+        subject=f"{prefix}.archive.anchor",
+        confidence=0.97,
+        metadata={"mammoth_archive_anchor": True},
+    )
+    if mammoth_archive is not None:
+        app.storage.execute(
+            """
+            UPDATE memories
+            SET status = 'archived',
+                archived_at = ?,
+                access_count = 3
+            WHERE id = ?
+            """,
+            (current_iso(), mammoth_archive.id),
+        )
+
     age_scope_records(app, scope_type="agent", scope_id=scope_id, days_ago=horizon_days)
     if current_fact is not None:
         # Keep the current truth fresh so the gauntlet measures survival of the canonical winner.
@@ -174,10 +197,15 @@ def run_survival_case(app, *, horizon_days: int, noise_count: int, scope_id: str
     rows_before = before["rows"].get("memories", 0)
     rows_after = after["rows"].get("memories", 0)
     deleted = compact["deleted"]
+    mammoth_survivor = None
+    if mammoth_archive is not None:
+        survivor = app.storage.get_memory(mammoth_archive.id)
+        mammoth_survivor = survivor is not None and survivor.status == "archived"
     passed = bool(
         selected == "Correction: the office address is now 200 Second Street."
         and rows_after < rows_before
         and deleted["archived_memories"] + deleted["superseded_memories"] > 0
+        and mammoth_survivor
     )
     return LongHorizonResult(
         name=f"survival_{horizon_days}d",
@@ -192,6 +220,7 @@ def run_survival_case(app, *, horizon_days: int, noise_count: int, scope_id: str
             "free_bytes_before": before["free_bytes"],
             "free_bytes_after": after["free_bytes"],
             "deleted": deleted,
+            "mammoth_archive_survived": mammoth_survivor,
             "state_before": state_before["state_counts"],
             "state_after": state_after["state_counts"],
         },

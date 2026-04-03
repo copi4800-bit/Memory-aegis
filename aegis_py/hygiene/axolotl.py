@@ -7,6 +7,7 @@ class RepairReport:
     schema_repaired: int
     fts_rebuilt: bool
     orphan_links_removed: int
+    diplocaulus_regeneration_score: float
 
 class AxolotlBeast:
     """Handles schema repair, index rebuilds, and orphan cleanup."""
@@ -61,9 +62,17 @@ class AxolotlBeast:
         schema_repaired = self.soft_repair_schema()
         fts_rebuilt = self.rebuild_fts_index()
         orphan_links_removed = self.repair_orphan_links()
+        diplocaulus_regeneration_score = min(
+            0.99,
+            0.34
+            + (0.22 if fts_rebuilt else 0.0)
+            + (min(schema_repaired, 3) * 0.12)
+            + (min(orphan_links_removed, 4) * 0.06),
+        )
         
         return RepairReport(
             schema_repaired=schema_repaired,
             fts_rebuilt=fts_rebuilt,
-            orphan_links_removed=orphan_links_removed
+            orphan_links_removed=orphan_links_removed,
+            diplocaulus_regeneration_score=round(diplocaulus_regeneration_score, 3),
         )

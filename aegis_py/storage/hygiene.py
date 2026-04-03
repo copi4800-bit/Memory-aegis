@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
@@ -70,6 +71,7 @@ class StorageHygieneRepository:
         deleted = {
             "archived_memories": 0,
             "superseded_memories": 0,
+            "mammoth_preserved_archives": 0,
             "evidence_artifacts": 0,
             "evidence_events": 0,
             "governance_events": 0,
@@ -78,15 +80,31 @@ class StorageHygieneRepository:
             "background_runs": 0,
         }
 
-        cursor = conn.execute(
+        archived_candidates = conn.execute(
             """
-            DELETE FROM memories
+            SELECT id, confidence, access_count, metadata_json
+            FROM memories
             WHERE status = 'archived'
               AND COALESCE(archived_at, updated_at, created_at) < ?
             """,
             (archived_cutoff,),
-        )
-        deleted["archived_memories"] = cursor.rowcount if cursor.rowcount != -1 else 0
+        ).fetchall()
+        deletable_archived_ids: list[str] = []
+        for row in archived_candidates:
+            if self._should_preserve_mammoth_archive(row):
+                deleted["mammoth_preserved_archives"] += 1
+                continue
+            deletable_archived_ids.append(row["id"])
+
+        if deletable_archived_ids:
+            placeholders = ", ".join("?" for _ in deletable_archived_ids)
+            cursor = conn.execute(
+                f"DELETE FROM memories WHERE id IN ({placeholders})",
+                tuple(deletable_archived_ids),
+            )
+            deleted["archived_memories"] = cursor.rowcount if cursor.rowcount != -1 else 0
+        else:
+            deleted["archived_memories"] = 0
 
         cursor = conn.execute(
             """
@@ -179,3 +197,20 @@ class StorageHygieneRepository:
             "deleted": deleted,
             "vacuumed": vacuum and total_deleted > 0,
         }
+
+    def _should_preserve_mammoth_archive(self, row: Any) -> bool:
+        metadata_raw = row["metadata_json"]
+        if isinstance(metadata_raw, str):
+            metadata = json.loads(metadata_raw or "{}")
+        else:
+            metadata = metadata_raw or {}
+
+        if metadata.get("mammoth_archive_anchor") or metadata.get("retention_pinned"):
+            return True
+
+        score_profile = metadata.get("score_profile", {}) if isinstance(metadata, dict) else {}
+        source_reliability = float(score_profile.get("source_reliability", 0.0) or 0.0)
+        confidence = float(row["confidence"] or 0.0)
+        access_count = int(row["access_count"] or 0)
+
+        return confidence >= 0.9 and source_reliability >= 0.88 and access_count >= 1

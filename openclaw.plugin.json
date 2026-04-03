@@ -23,6 +23,9 @@
         "memory_search",
         "memory_spotlight",
         "memory_core_showcase",
+        "memory_experience_brief",
+        "memory_consumer_shell",
+        "memory_dashboard_shell",
         "memory_context_pack",
       "memory_conflict_prompt",
       "memory_conflict_resolve",
@@ -47,6 +50,7 @@
       "memory_vector_inspect",
       "memory_evidence_artifacts",
       "memory_storage_footprint",
+      "memory_compressed_tier_status",
       "memory_storage_compact",
       "memory_backup_upload",
       "memory_backup_list",
@@ -128,7 +132,7 @@
         "required": ["query"]
       }
     },
-      {
+    {
         "name": "memory_core_showcase",
         "description": "[Advanced] Render the full Aegis core story for one query: selected truth, why-this, why-not, evidence, governance, signals, graph context, and scope health.",
         "parameters": {
@@ -148,8 +152,65 @@
           },
           "required": ["query"]
         }
-      },
-      {
+    },
+    {
+        "name": "memory_experience_brief",
+        "description": "[Advanced] Render a product-facing TruthKeep brief with current truth, confidence, profile fit, runtime health, compressed-tier readiness, and next actions.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string" },
+            "limit": { "type": "number" },
+            "scopeType": { "type": "string" },
+            "scopeId": { "type": "string" },
+            "includeGlobal": { "type": "boolean" },
+            "semantic": { "type": "boolean" },
+            "semanticModel": { "type": "string" },
+            "intent": {
+              "type": "string",
+              "description": "Optional experience intent such as correction_lookup or user_override_active."
+            }
+          },
+          "required": ["query"]
+        }
+    },
+    {
+        "name": "memory_consumer_shell",
+        "description": "[Advanced] Render a first-run TruthKeep shell with readiness, current brief, primary actions, tool highlights, and setup guidance.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string" },
+            "scopeType": { "type": "string" },
+            "scopeId": { "type": "string" },
+            "workspaceDir": { "type": "string" },
+            "limit": { "type": "number" },
+            "includeGlobal": { "type": "boolean" },
+            "semantic": { "type": "boolean" },
+            "semanticModel": { "type": "string" },
+            "intent": { "type": "string" }
+          }
+        }
+    },
+    {
+        "name": "memory_dashboard_shell",
+        "description": "[Advanced] Render a unified TruthKeep dashboard that combines consumer shell, current-truth brief, and deep inspection in one destination.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string" },
+            "scopeType": { "type": "string" },
+            "scopeId": { "type": "string" },
+            "workspaceDir": { "type": "string" },
+            "limit": { "type": "number" },
+            "includeGlobal": { "type": "boolean" },
+            "semantic": { "type": "boolean" },
+            "semanticModel": { "type": "string" },
+            "intent": { "type": "string" }
+          }
+        }
+    },
+    {
         "name": "memory_spotlight",
         "description": "[Advanced] Render a compact current-truth spotlight with selected memory, why-this, truth state, and why-not alternatives.",
       "parameters": {
@@ -626,6 +687,17 @@
       "parameters": {
         "type": "object",
         "properties": {}
+      }
+    },
+    {
+      "name": "memory_compressed_tier_status",
+      "description": "[Advanced] Inspect software-level compressed tier coverage, benchmark readiness, and scoped compressed status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scopeType": { "type": "string" },
+          "scopeId": { "type": "string" }
+        }
       }
     },
     {

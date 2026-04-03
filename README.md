@@ -94,6 +94,30 @@ export PYTHONPATH=$PYTHONPATH:.
 python3 scripts/demo_core_showcase.py
 ```
 
+Product-facing experience brief:
+
+```bash
+export PYTHONPATH=$PYTHONPATH:.
+python3 scripts/demo_experience_brief.py
+python3 scripts/render_experience_brief_html.py
+```
+
+Consumer shell:
+
+```bash
+export PYTHONPATH=$PYTHONPATH:.
+python3 scripts/demo_consumer_shell.py
+python3 scripts/render_consumer_shell_html.py
+```
+
+Dashboard shell:
+
+```bash
+export PYTHONPATH=$PYTHONPATH:.
+python3 scripts/demo_dashboard_shell.py
+python3 scripts/render_dashboard_shell_html.py
+```
+
 Polished HTML report:
 
 ```bash
@@ -124,6 +148,16 @@ Long-horizon survival:
 ```bash
 export PYTHONPATH=$PYTHONPATH:.
 python3 scripts/long_horizon_memory_survival.py
+```
+
+Compressed tier closure:
+
+```bash
+export PYTHONPATH=$PYTHONPATH:.
+python3 scripts/benchmark_compressed_candidate_tier.py
+python3 scripts/check_compressed_tier_gate.py
+python3 scripts/render_compressed_tier_report.py
+python3 scripts/check_compressed_tier_completion.py
 ```
 
 This verifies that:

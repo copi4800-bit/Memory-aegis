@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from .hygiene.librarian import LibrarianBeast
+from .hygiene.nutcracker import NutcrackerBeast
+from .retrieval.compressed_tier import build_compressed_tier_coverage, build_compressed_tier_status
 from .retrieval.v10_dynamics import bundle_energy_snapshot
 from .storage.manager import DEFAULT_COMPACTION_POLICY
 
@@ -51,8 +54,61 @@ class AegisOperatorSurface:
             ),
         }
 
-    def storage_footprint(self) -> dict[str, Any]:
-        return self.app.storage.storage_footprint()
+    def storage_footprint(
+        self,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+    ) -> dict[str, Any]:
+        footprint = self.app.storage.storage_footprint()
+        deinosuchus = NutcrackerBeast(self.app.storage).check_db_health()
+        footprint["prehistoric_storage"] = {
+            "deinosuchus_compaction_pressure": deinosuchus.deinosuchus_compaction_pressure,
+            "orphaned_links": deinosuchus.orphaned_links,
+            "active_memories": deinosuchus.active_memories,
+            "total_memories": deinosuchus.total_memories,
+        }
+        memory_rows = [
+            {
+                "id": row["id"],
+                "metadata_json": self.app.storage._coerce_metadata(row["metadata_json"]),
+            }
+            for row in self.app.storage.fetch_all("SELECT id, metadata_json FROM memories")
+        ]
+        footprint["compressed_tier"] = build_compressed_tier_coverage(memory_rows)
+        if scope_type and scope_id:
+            footprint["prehistoric_storage"]["titanoboa_index_locality"] = (
+                LibrarianBeast(self.app.storage).build_index_locality_report(scope_type, scope_id)
+            )
+        return footprint
+
+    def compressed_tier_status(
+        self,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+    ) -> dict[str, Any]:
+        query = "SELECT id, metadata_json FROM memories"
+        params: tuple[Any, ...] = ()
+        if scope_type and scope_id:
+            query += " WHERE scope_type = ? AND scope_id = ?"
+            params = (scope_type, scope_id)
+        rows = [
+            {
+                "id": row["id"],
+                "metadata_json": self.app.storage._coerce_metadata(row["metadata_json"]),
+            }
+            for row in self.app.storage.fetch_all(query, params)
+        ]
+        status = build_compressed_tier_status(
+            rows=rows,
+            scope_type=scope_type,
+            scope_id=scope_id,
+        )
+        return {
+            "backend": "python",
+            "compressed_tier": status,
+        }
 
     def storage_compaction_policy(self) -> dict[str, int]:
         return dict(DEFAULT_COMPACTION_POLICY)

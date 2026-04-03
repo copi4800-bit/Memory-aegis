@@ -66,3 +66,22 @@ class ContentExtractor:
             seen.add(token)
             tokens.append(token)
         return tokens
+
+    def derive_profile(self, content: str) -> dict[str, object]:
+        normalized = WHITESPACE_PATTERN.sub(" ", content).strip()
+        keywords = self._keywords(content)
+        structural_markers = sum(
+            1
+            for marker in (":", ";", "->", "1.", "2.", "because", "using", "before", "after")
+            if marker in normalized.lower()
+        )
+        dimetrodon_feature_separation = min(
+            0.99,
+            0.24 + (min(len(keywords), 8) * 0.07) + (min(structural_markers, 4) * 0.06),
+        )
+        return {
+            "keywords": keywords[:8],
+            "keyword_count": len(keywords),
+            "structural_markers": structural_markers,
+            "dimetrodon_feature_separation": round(dimetrodon_feature_separation, 3),
+        }

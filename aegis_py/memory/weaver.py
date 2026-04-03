@@ -56,3 +56,20 @@ class WeaverBeast:
         """
         # This will be integrated more deeply in the IngestEngine phase.
         return []
+
+    def build_topology_report(self, memory_id: str, *, limit: int = 10) -> dict[str, object]:
+        neighbors = self.storage.list_memory_neighbors(memory_id=memory_id, limit=limit)
+        edge_count = len(neighbors)
+        avg_weight = 0.0 if not neighbors else sum(float(item["link"]["weight"]) for item in neighbors) / edge_count
+        unique_link_types = sorted({str(item["link"]["link_type"]) for item in neighbors})
+        megarachne_topology_strength = min(
+            0.99,
+            0.26 + (min(edge_count, 6) * 0.08) + (min(avg_weight, 1.0) * 0.24) + (min(len(unique_link_types), 4) * 0.05),
+        )
+        return {
+            "memory_id": memory_id,
+            "edge_count": edge_count,
+            "average_weight": round(avg_weight, 3),
+            "link_types": unique_link_types,
+            "megarachne_topology_strength": round(megarachne_topology_strength, 3),
+        }

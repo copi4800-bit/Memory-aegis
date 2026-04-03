@@ -10,8 +10,10 @@ from .normalizer import SubjectNormalizer
 from .scorer import WriteTimeScorer
 from .weaver import WeaverBeast
 from .correction import CorrectionDetector
+from ..hygiene.bowerbird import BowerbirdBeast
 from ..storage.manager import StorageManager
 from ..storage.models import Memory
+from ..retrieval.compressed_tier import build_compressed_tier_payload
 from ..v10_base.policy_gate import ValidationPolicyGate
 from ..v10_base.state_machine import MemoryStateMachine
 
@@ -69,6 +71,7 @@ class IngestEngine:
         self.subject_normalizer = SubjectNormalizer()
         self.write_time_scorer = WriteTimeScorer()
         self.weaver = WeaverBeast(storage)
+        self.bowerbird = BowerbirdBeast(storage)
         self.correction_detector = CorrectionDetector()
         self.search_pipeline = search_pipeline
         self.policy_gate = ValidationPolicyGate()
@@ -188,11 +191,17 @@ class IngestEngine:
                 session_id=kwargs.get("session_id"),
                 source_kind=source_kind,
             )
+        lane_profile = self.lane_classifier.profile(
+            content=content,
+            session_id=kwargs.get("session_id"),
+            source_kind=source_kind,
+        )
+        extraction_profile = self.content_extractor.derive_profile(content)
 
         # 4. Create Memory Instance
         # metadata already prepared above
             
-        subject = (
+        raw_subject = (
             kwargs["subject"]
             if "subject" in kwargs
             else self.content_extractor.derive_subject(content)
@@ -202,7 +211,8 @@ class IngestEngine:
             if "summary" in kwargs
             else self.content_extractor.derive_summary(content)
         )
-        subject = self.subject_normalizer.normalize(subject)
+        subject_profile = self.subject_normalizer.profile(raw_subject)
+        subject = subject_profile.canonical_subject
         if "confidence" in kwargs:
             confidence = kwargs["confidence"]
         else:
@@ -237,6 +247,24 @@ class IngestEngine:
         kwargs["confidence"] = confidence
         kwargs["activation_score"] = activation_score
         metadata["score_profile"] = score_profile
+        metadata["lane_profile"] = lane_profile
+        metadata["extraction_profile"] = extraction_profile
+        metadata["subject_profile"] = {
+            "raw_subject": subject_profile.raw_subject,
+            "canonical_subject": subject_profile.canonical_subject,
+            "ammonite_spiral_stability": subject_profile.ammonite_spiral_stability,
+            "segment_count": subject_profile.segment_count,
+            "alnum_retention_ratio": subject_profile.alnum_retention_ratio,
+        }
+        metadata["oviraptor_profile"] = self.bowerbird.assess_subject(subject)
+        metadata["compressed_tier"] = build_compressed_tier_payload(
+            content=content,
+            summary=summary,
+            subject=subject,
+            status="active",
+            activation_score=float(activation_score or 0.0),
+            metadata=metadata,
+        )
         entities = self.entity_extractor.extract(content=content, subject=kwargs.get("subject"))
         if entities:
             metadata["entities"] = entities
@@ -328,6 +356,201 @@ class IngestEngine:
             )
         return memory if success else None
 
+    def diagnose_attempt(
+        self,
+        content: str,
+        *,
+        type: str | None = None,
+        scope_type: str = "session",
+        scope_id: str = "default",
+        source_kind: str = "message",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Explains whether an ingest attempt would admit, deduplicate, or be blocked."""
+        if not self.filter.is_worthy(content):
+            return {
+                "outcome": "not_worthy",
+                "reason_code": "filtered_not_worthy",
+                "reasons": ["filtered_not_worthy"],
+                "scope_type": scope_type,
+                "scope_id": scope_id,
+                "subject": kwargs.get("subject"),
+                "promotable": False,
+                "target_state": None,
+            }
+
+        metadata = dict(kwargs.get("metadata", {}) or {})
+        if self.correction_detector.is_correction(content):
+            metadata["is_correction"] = True
+
+        existing_exact = self.storage.fetch_one(
+            "SELECT id FROM memories WHERE content = ? AND scope_id = ? AND scope_type = ? LIMIT 1",
+            (content, scope_id, scope_type),
+        )
+        if existing_exact:
+            return {
+                "outcome": "exact_dedup",
+                "reason_code": "exact_content_scope_match",
+                "reasons": ["exact_content_scope_match"],
+                "scope_type": scope_type,
+                "scope_id": scope_id,
+                "subject": kwargs.get("subject"),
+                "exact_duplicate_id": existing_exact["id"],
+                "promotable": True,
+                "target_state": "validated",
+            }
+
+        resolved_type = type
+        if resolved_type is None:
+            resolved_type = self.lane_classifier.infer(
+                content=content,
+                session_id=kwargs.get("session_id"),
+                source_kind=source_kind,
+            )
+
+        raw_subject = kwargs.get("subject") or self.content_extractor.derive_subject(content)
+        summary = kwargs.get("summary") or self.content_extractor.derive_summary(content)
+        subject_profile = self.subject_normalizer.profile(raw_subject)
+        subject = subject_profile.canonical_subject
+
+        confidence = kwargs.get("confidence")
+        activation_score = kwargs.get("activation_score")
+        if confidence is None or activation_score is None:
+            score_profile = self.write_time_scorer.build_profile(
+                content=content,
+                memory_type=resolved_type,
+                source_kind=source_kind,
+            )
+            inferred_confidence, inferred_activation = self.write_time_scorer.infer(
+                content=content,
+                memory_type=resolved_type,
+                source_kind=source_kind,
+            )
+            if confidence is None:
+                confidence = inferred_confidence
+            if activation_score is None:
+                activation_score = inferred_activation
+        else:
+            score_profile = self.write_time_scorer.build_profile(
+                content=content,
+                memory_type=resolved_type,
+                source_kind=source_kind,
+            )
+
+        diagnostic_metadata = dict(metadata)
+        diagnostic_metadata["score_profile"] = score_profile
+        diagnostic_metadata["lane_profile"] = self.lane_classifier.profile(
+            content=content,
+            session_id=kwargs.get("session_id"),
+            source_kind=source_kind,
+        )
+        diagnostic_metadata["extraction_profile"] = self.content_extractor.derive_profile(content)
+        diagnostic_metadata["subject_profile"] = {
+            "raw_subject": subject_profile.raw_subject,
+            "canonical_subject": subject_profile.canonical_subject,
+            "ammonite_spiral_stability": subject_profile.ammonite_spiral_stability,
+            "segment_count": subject_profile.segment_count,
+            "alnum_retention_ratio": subject_profile.alnum_retention_ratio,
+        }
+        diagnostic_metadata["oviraptor_profile"] = self.bowerbird.assess_subject(subject)
+        entities = self.entity_extractor.extract(content=content, subject=subject)
+        if entities:
+            diagnostic_metadata["entities"] = entities
+        diagnostic_metadata.setdefault(
+            "evidence",
+            {
+                "event_id": "diagnostic://synthetic-evidence",
+                "kind": "synthetic_diagnostic",
+                "source_kind": source_kind,
+                "source_ref": kwargs.get("source_ref"),
+                "captured_at": "diagnostic",
+            },
+        )
+
+        memory = self.factory.create(
+            type=resolved_type,
+            content=content,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            source_kind=source_kind,
+            metadata=diagnostic_metadata,
+            subject=subject,
+            summary=summary,
+            confidence=confidence,
+            activation_score=activation_score,
+            session_id=kwargs.get("session_id"),
+            source_ref=kwargs.get("source_ref"),
+        )
+        candidate = self.build_candidate(memory)
+        decision = self.evaluate_candidate(candidate)
+        blocked_reasons = [reason for reason in decision.reasons if reason.startswith("blocked_")]
+        meganeura_capture_span = float(score_profile.get("meganeura_capture_span", 0.0) or 0.0)
+        if meganeura_capture_span >= 0.8:
+            meganeura_band = "broad"
+        elif meganeura_capture_span >= 0.58:
+            meganeura_band = "focused"
+        else:
+            meganeura_band = "narrow"
+        meganeura_guidance = {
+            "broad": "Captures broad operational context and is likely durable under later review.",
+            "focused": "Captures enough operational detail for reliable write-time promotion.",
+            "narrow": "Carries only narrow detail and may need stronger supporting context.",
+        }[meganeura_band]
+        ammonite_stability = float(diagnostic_metadata["subject_profile"].get("ammonite_spiral_stability", 0.0) or 0.0)
+        if ammonite_stability >= 0.82:
+            ammonite_band = "stable"
+        elif ammonite_stability >= 0.68:
+            ammonite_band = "settling"
+        else:
+            ammonite_band = "drifting"
+
+        chalicotherium_fit = float(diagnostic_metadata["lane_profile"].get("chalicotherium_ecology_fit", 0.0) or 0.0)
+        if chalicotherium_fit >= 0.82:
+            chalicotherium_band = "native"
+        elif chalicotherium_fit >= 0.62:
+            chalicotherium_band = "fitting"
+        else:
+            chalicotherium_band = "uncertain"
+
+        dimetrodon_separation = float(diagnostic_metadata["extraction_profile"].get("dimetrodon_feature_separation", 0.0) or 0.0)
+        if dimetrodon_separation >= 0.82:
+            dimetrodon_band = "surgical"
+        elif dimetrodon_separation >= 0.62:
+            dimetrodon_band = "separated"
+        else:
+            dimetrodon_band = "blended"
+
+        return {
+            "outcome": "admit" if decision.promotable else "policy_block",
+            "reason_code": blocked_reasons[0] if blocked_reasons else "promotion_allowed",
+            "reasons": list(decision.reasons),
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+            "subject": subject,
+            "subject_profile": diagnostic_metadata["subject_profile"],
+            "oviraptor_profile": diagnostic_metadata["oviraptor_profile"],
+            "promotable": decision.promotable,
+            "target_state": decision.target_state,
+            "confidence": float(confidence or 0.0),
+            "activation_score": float(activation_score or 0.0),
+            "contradiction_risk": candidate.contradiction_risk,
+            "policy_name": decision.policy_name,
+            "score_profile": score_profile,
+            "prehistoric_write": {
+                "meganeura_capture_span": meganeura_capture_span,
+                "meganeura_band": meganeura_band,
+                "meganeura_guidance": meganeura_guidance,
+                "ammonite_spiral_stability": ammonite_stability,
+                "ammonite_band": ammonite_band,
+                "chalicotherium_ecology_fit": chalicotherium_fit,
+                "chalicotherium_band": chalicotherium_band,
+                "dimetrodon_feature_separation": dimetrodon_separation,
+                "dimetrodon_band": dimetrodon_band,
+            },
+            "lane_profile": diagnostic_metadata["lane_profile"],
+            "extraction_profile": diagnostic_metadata["extraction_profile"],
+        }
+
     def _token_overlap_ratio(self, left: str, right: str) -> float:
         token_pattern = re.compile(r"\w+", re.UNICODE)
         left_tokens = {token for token in token_pattern.findall(left.lower()) if len(token) > 2}
@@ -341,9 +564,28 @@ class IngestEngine:
         evidence = memory.metadata.get("evidence", {}) if isinstance(memory.metadata, dict) else {}
         evidence_event_id = evidence.get("event_id") if isinstance(evidence, dict) else None
         contradiction_risk = self._has_contradiction_risk(memory)
+        score_profile = memory.metadata.get("score_profile", {}) if isinstance(memory.metadata, dict) else {}
+        subject_profile = memory.metadata.get("subject_profile", {}) if isinstance(memory.metadata, dict) else {}
+        lane_profile = memory.metadata.get("lane_profile", {}) if isinstance(memory.metadata, dict) else {}
+        extraction_profile = memory.metadata.get("extraction_profile", {}) if isinstance(memory.metadata, dict) else {}
+        conflict_sentinel_score = float(score_profile.get("thylacoleo_conflict_sentinel_score", 0.0) or 0.0)
+        meganeura_capture_span = float(score_profile.get("meganeura_capture_span", 0.0) or 0.0)
+        ammonite_stability = float(subject_profile.get("ammonite_spiral_stability", 0.0) or 0.0)
+        chalicotherium_fit = float(lane_profile.get("chalicotherium_ecology_fit", 0.0) or 0.0)
+        dimetrodon_feature_separation = float(extraction_profile.get("dimetrodon_feature_separation", 0.0) or 0.0)
         reasons: list[str] = []
         if contradiction_risk:
             reasons.append("contradiction_risk_detected")
+        if conflict_sentinel_score >= 0.45:
+            reasons.append("thylacoleo_conflict_sentinel_elevated")
+        if meganeura_capture_span >= 0.58:
+            reasons.append("meganeura_capture_span_broad")
+        if ammonite_stability >= 0.72:
+            reasons.append("ammonite_spiral_stability_strong")
+        if chalicotherium_fit >= 0.6:
+            reasons.append("chalicotherium_lane_fit_high")
+        if dimetrodon_feature_separation >= 0.62:
+            reasons.append("dimetrodon_feature_separation_strong")
         if evidence_event_id:
             reasons.append("evidence_present")
         else:

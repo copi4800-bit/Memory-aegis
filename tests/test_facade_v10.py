@@ -1,13 +1,13 @@
 import os
-import shutil
 import unittest
+import uuid
 from pathlib import Path
 from aegis_py.facade import Aegis
 
 class TestFacadeV10(unittest.TestCase):
     def setUp(self):
-        # Create a clean temporary DB for each test
-        self.db_path = "/tmp/test_aegis_facade_v10.db"
+        # Create a unique temporary DB for each test to avoid Windows file locking collisions.
+        self.db_path = str(Path("/tmp") / f"test_aegis_facade_v10_{uuid.uuid4().hex}.db")
         if os.path.exists(self.db_path):
             os.remove(self.db_path)
         self.aegis = Aegis.auto(self.db_path)

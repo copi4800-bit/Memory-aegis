@@ -22,29 +22,33 @@ class HygieneEngine:
 
     def run_maintenance(self, half_life_days: float | None = None):
         """Performs full system hygiene."""
+        diplocaulus = self.axolotl.validate_integrity()
+
         # 1. Apply aging
         if half_life_days is None:
             self.decay_beast.apply_typed_decay()
         else:
             self.storage.apply_decay(half_life_days=half_life_days)
         self.decay_beast.crystallize_hot_memories()
+        self.decay_beast.retire_pressure_candidates()
         self.storage.apply_retention_policy()
         
         # 2. Clean up dead nodes
         self.storage.archive_expired()
 
         # 3. Repair & Taxonomy Cleanup
-        self.axolotl.repair_orphan_links()
-        self.bowerbird.normalize_subjects()
+        if diplocaulus.diplocaulus_regeneration_score >= 0.45:
+            self.bowerbird.normalize_subjects()
 
-        # 4. Scan and Resolve conflicts (Corrections)
-        self._detect_and_resolve_conflicts()
+            # 4. Scan and Resolve conflicts (Corrections)
+            self._detect_and_resolve_conflicts()
 
-        # 5. Consolidate semantic duplicates (subject-based)
-        self._consolidate_all_subjects()
+            # 5. Consolidate semantic duplicates (subject-based)
+            self._consolidate_all_subjects()
 
         # 6. Final vacuum
-        self.nutcracker.vacuum_db()
+        if self.nutcracker.check_db_health().deinosuchus_compaction_pressure >= 0.32:
+            self.nutcracker.vacuum_db()
 
     def _detect_and_resolve_conflicts(self):
         """Finds contradictions and auto-resolves if recency-based corrections."""

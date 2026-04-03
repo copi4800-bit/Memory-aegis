@@ -38,10 +38,12 @@ class MemoryConstitution:
             d.admissible = False
             d.governance_status = GovernanceStatus.SUPERSEDED
             d.retrievable_mode = RetrievableMode.AUDIT
+            d.policy_trace.append("ARCHELON_SUPERSEDED_INVARIANT")
             d.policy_trace.append("C2_SUPERSEDED_EXCLUSION")
             return d
 
         if d.truth_role == TruthRole.WINNER:
+            self._apply_archelon_winner_invariant(d, m)
             d.policy_trace.append("C2_SLOT_WINNER_PROTECTION")
             
         # --- C3: Governance Risk & Budget (Rule 4, 9, 11) ---
@@ -77,6 +79,15 @@ class MemoryConstitution:
                 d.retrievable_mode = RetrievableMode.NONE
             
         return d
+
+    def _apply_archelon_winner_invariant(self, d: DecisionObject, m: Any) -> None:
+        conflict_severity = getattr(m.conflict, "unresolved_contradiction", 0.0)
+        if conflict_severity > 0.8:
+            return
+        d.admissible = True
+        d.governance_status = GovernanceStatus.ACTIVE
+        d.retrievable_mode = RetrievableMode.NORMAL
+        d.policy_trace.append("ARCHELON_WINNER_INVARIANT")
 
     def _violates_safety(self, m: Any) -> bool:
         # Placeholder for real safety filters

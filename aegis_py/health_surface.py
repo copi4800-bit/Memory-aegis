@@ -4,6 +4,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .hygiene.decay import DecayBeast
+
 
 class AegisHealthSurface:
     """Health and status facade extracted from AegisApp."""
@@ -24,6 +26,12 @@ class AegisHealthSurface:
         )
         storage = self.safe_storage_footprint()
         storage_policy = self.app.storage_compaction_policy()
+        smilodon_candidates = DecayBeast(self.app.storage).evaluate_retirement_candidates()[:3]
+        smilodon_peak = (
+            float(smilodon_candidates[0]["smilodon_retirement_pressure"])
+            if smilodon_candidates
+            else 0.0
+        )
         historical_rows = (
             storage["rows"].get("evidence_events", 0)
             + storage["rows"].get("evidence_artifacts", 0)
@@ -38,6 +46,8 @@ class AegisHealthSurface:
             "memory_rows": storage["rows"].get("memories", 0),
             "historical_rows": historical_rows,
             "compaction_policy": storage_policy,
+            "smilodon_peak_retirement_pressure": round(smilodon_peak, 3),
+            "smilodon_candidates": smilodon_candidates,
         }
 
         # v10 Intelligence Metrics
@@ -152,6 +162,7 @@ class AegisHealthSurface:
                 f"Memories tracked: {payload['counts']['memories']}",
                 f"Allocated storage: {payload['storage']['allocated_bytes']} bytes",
                 f"Historical rows: {payload['storage']['historical_rows']}",
+                f"Smilodon peak pressure: {payload['storage']['smilodon_peak_retirement_pressure']:.3f}",
             ]
         )
 
@@ -161,6 +172,14 @@ class AegisHealthSurface:
 
         if payload["storage"]["historical_rows"] > payload["counts"]["memories"]:
             lines.extend(["", "Storage guidance:", "- Historical rows are outgrowing live memory. Run storage compaction soon."])
+        if payload["storage"]["smilodon_peak_retirement_pressure"] >= 0.7:
+            lines.extend(
+                [
+                    "",
+                    "Retirement guidance:",
+                    "- Old low-signal memories are accumulating pressure. Review pinning or archival strategy soon.",
+                ]
+            )
 
         if health_state == "BROKEN":
             lines.extend(["", "Next step:", "- Fix the local database or workspace problem before relying on memory."])
