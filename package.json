@@ -5,6 +5,7 @@
   "files": [
     "aegis_py/",
     "truthkeep/",
+    "openclaw/",
     "bin/",
     "install.sh",
     "requirements.txt",
@@ -13,7 +14,7 @@
     "LICENSE",
     "openclaw.plugin.json"
   ],
-  "main": "truthkeep/mcp.py",
+  "main": "./openclaw/truthkeep-memory.native.cjs",
   "scripts": {
     "postinstall": "bash install.sh",
     "setup": "bash install.sh",
@@ -39,13 +40,8 @@
   },
   "openclaw": {
     "extensions": [
-      {
-        "id": "truthkeep-memory",
-        "kind": "memory",
-        "manifest": "./openclaw.plugin.json",
-        "entrypoint": "truthkeep-mcp",
-        "onboardingCommand": "truthkeep-setup"
-      }
-    ]
+      "./openclaw/truthkeep-memory.native.cjs"
+    ],
+    "setupEntry": "./openclaw/truthkeep-memory.native.cjs"
   }
 }

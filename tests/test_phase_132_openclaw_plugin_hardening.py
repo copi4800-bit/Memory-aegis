@@ -31,11 +31,9 @@ def test_package_json_declares_openclaw_extension_and_bins():
     assert package_json["bin"]["truthkeep-mcp"] == "./bin/truthkeep-mcp"
 
     extensions = package_json["openclaw"]["extensions"]
-    assert extensions
-    extension = extensions[0]
-    assert extension["manifest"] == "./openclaw.plugin.json"
-    assert extension["entrypoint"] == "truthkeep-mcp"
-    assert extension["onboardingCommand"] == "truthkeep-setup"
+    assert extensions == ["./openclaw/truthkeep-memory.native.cjs"]
+    assert package_json["openclaw"]["setupEntry"] == "./openclaw/truthkeep-memory.native.cjs"
+    assert package_json["main"] == "./openclaw/truthkeep-memory.native.cjs"
 
 
 def test_manifest_onboarding_command_has_real_bin_wrapper():
