@@ -71,7 +71,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             finally:
                 server.close()
         else:
-            emit_output("Run `aegis-mcp` to start the MCP server, or `truthkeep mcp --json` for a startup probe.")
+            emit_output(
+                "Run `truthkeep-mcp` to start the MCP server, "
+                "or `truthkeep mcp --json` for a startup probe. "
+                "Legacy alias `aegis-mcp` still works."
+            )
         return 0
 
     app = AegisApp(args.db_path)
@@ -147,3 +151,4 @@ def emit_output(text: str, *, stream: io.TextIOBase | None = None) -> None:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

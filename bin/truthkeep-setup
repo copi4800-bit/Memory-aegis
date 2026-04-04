@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+
+def resolve_repo_root() -> Path:
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here.parent,
+        here.parent.parent,
+    ]
+    for candidate in candidates:
+        if (candidate / "truthkeep" / "cli.py").exists():
+            return candidate
+    raise RuntimeError("Unable to locate the TruthKeep repository root.")
+
+
+def main() -> int:
+    repo_root = resolve_repo_root()
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    from truthkeep.install_check import build_install_readiness_report
+
+    workspace_dir = Path.cwd()
+    db_path = os.environ.get("TRUTHKEEP_DB_PATH", str(workspace_dir / ".truthkeep" / "truthkeep_v10.db"))
+
+    print("===============================================")
+    print("   Welcome to TruthKeep Memory - Quick Setup   ")
+    print("===============================================")
+    print()
+    print(f"- Workspace detected: {workspace_dir}")
+
+    install_report = build_install_readiness_report(workspace_dir)
+    print("- Install preflight:")
+    for key in ("python", "sqlite_fts5", "node", "npm"):
+        check = install_report["checks"][key]
+        status = "ok" if check["ok"] else "missing"
+        print(f"  - {key}: {status} ({check['summary']})")
+    if install_report["guidance"]:
+        print()
+        print("Install guidance:")
+        for entry in install_report["guidance"]:
+            print(f"- {entry}")
+    print()
+    print("First value next steps:")
+    print(f"1. PYTHONPATH={repo_root} {sys.executable} -m truthkeep --db-path {db_path} remember \"My favorite drink is jasmine tea.\"")
+    print(f"2. PYTHONPATH={repo_root} {sys.executable} -m truthkeep --db-path {db_path} recall \"What is my favorite drink?\"")
+    print(f"3. PYTHONPATH={repo_root} {sys.executable} -m truthkeep --db-path {db_path} status")
+    print(f"4. PYTHONPATH={repo_root} {sys.executable} -m truthkeep --db-path {db_path} field-snapshot")
+    print()
+    print("===============================================")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

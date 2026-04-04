@@ -1,2 +1,5 @@
-"""Public package alias for TruthKeep Memory."""
+"""Public package surface for TruthKeep Memory."""
 
+from .facade import TruthKeep
+
+__all__ = ["TruthKeep"]

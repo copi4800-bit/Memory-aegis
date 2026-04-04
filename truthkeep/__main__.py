@@ -1,4 +1,4 @@
-from aegis_py.cli import main
+from truthkeep.cli import main
 
 
 if __name__ == "__main__":

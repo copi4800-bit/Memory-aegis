@@ -128,9 +128,10 @@ If dense retrieval is added later, it should be added as:
 pip install -e .
 ```
 
-2. Inspect the whole-system memory field:
+2. Check local runtime and plugin readiness:
 
 ```bash
+truthkeep-check
 truthkeep field-snapshot
 ```
 
@@ -169,6 +170,12 @@ Start the MCP server:
 truthkeep-mcp
 ```
 
+Run the first-run setup helper:
+
+```bash
+truthkeep-setup
+```
+
 Or inspect startup readiness through the standalone CLI:
 
 ```bash
@@ -180,6 +187,8 @@ Run the full test suite:
 ```bash
 python -m pytest tests
 ```
+
+Legacy aliases `aegis-mcp`, `aegis-check`, and `aegis-setup` still work for compatibility.
 
 ## Best Demos
 
@@ -317,6 +326,7 @@ It is strongest where memory has to stay **right**, not merely **relevant**.
 ## License
 
 MIT
+
 
 
 

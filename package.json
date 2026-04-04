@@ -4,6 +4,7 @@
   "description": "TruthKeep Memory: truth-aware memory extension for OpenClaw.",
   "files": [
     "aegis_py/",
+    "truthkeep/",
     "bin/",
     "install.sh",
     "requirements.txt",
@@ -12,12 +13,12 @@
     "LICENSE",
     "openclaw.plugin.json"
   ],
-  "main": "aegis_py/mcp/server.py",
+  "main": "truthkeep/mcp.py",
   "scripts": {
     "postinstall": "bash install.sh",
     "setup": "bash install.sh",
     "test": "pytest tests/",
-    "check": "python3 aegis_py/install_check.py"
+    "check": "python3 -m truthkeep.install_check"
   },
   "keywords": [
     "memory",
@@ -27,5 +28,24 @@
     "openclaw"
   ],
   "author": "antigravity",
-  "license": "MIT"
+  "license": "MIT",
+  "bin": {
+    "truthkeep-setup": "./bin/truthkeep-setup",
+    "truthkeep-check": "./bin/truthkeep-check",
+    "truthkeep-mcp": "./bin/truthkeep-mcp",
+    "aegis-setup": "./bin/aegis-setup",
+    "aegis-check": "./bin/aegis-check",
+    "aegis-mcp": "./bin/aegis-mcp"
+  },
+  "openclaw": {
+    "extensions": [
+      {
+        "id": "truthkeep-memory",
+        "kind": "memory",
+        "manifest": "./openclaw.plugin.json",
+        "entrypoint": "truthkeep-mcp",
+        "onboardingCommand": "truthkeep-setup"
+      }
+    ]
+  }
 }

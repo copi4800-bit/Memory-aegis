@@ -16,7 +16,7 @@ def check_python_version() -> dict[str, Any]:
     ok = sys.version_info >= (3, 11)
     version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     if not ok:
-        guidance = "Install Python 3.11 or newer before running Aegis."
+        guidance = "Install Python 3.11 or newer before running TruthKeep."
     elif _venv_active():
         guidance = None
     else:
@@ -101,13 +101,13 @@ def build_install_readiness_report(workspace_dir: str | Path) -> dict[str, Any]:
 
     if blocking_failures:
         readiness = "BLOCKED"
-        summary = "Core install prerequisites are missing. Aegis cannot run safely yet."
+        summary = "Core install prerequisites are missing. TruthKeep cannot run safely yet."
     elif plugin_gaps:
         readiness = "RUNTIME_READY_PLUGIN_INCOMPLETE"
-        summary = "Aegis runtime prerequisites are ready, but the OpenClaw plugin/bootstrap path is not fully installed yet."
+        summary = "TruthKeep runtime prerequisites are ready, but the OpenClaw plugin/bootstrap path is not fully installed yet."
     else:
         readiness = "READY"
-        summary = "Aegis runtime and plugin prerequisites look ready on this machine."
+        summary = "TruthKeep runtime and plugin prerequisites look ready on this machine."
 
     guidance = [entry["guidance"] for entry in checks.values() if entry.get("guidance")]
 
@@ -118,3 +118,16 @@ def build_install_readiness_report(workspace_dir: str | Path) -> dict[str, Any]:
         "checks": checks,
         "guidance": guidance,
     }
+
+
+def main() -> int:
+    import json
+
+    report = build_install_readiness_report(Path.cwd())
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
+

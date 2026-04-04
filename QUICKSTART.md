@@ -8,16 +8,16 @@
 pip install -e .
 ```
 
-2. Store your first memory.
+2. Check local runtime and plugin readiness.
 
 ```bash
-truthkeep remember "The release owner is Bao."
+truthkeep-check
 ```
 
-3. Recall it.
+3. Run the setup helper.
 
 ```bash
-truthkeep recall "Who is the release owner?"
+truthkeep-setup
 ```
 
 4. Inspect the whole-system field snapshot.
@@ -52,7 +52,7 @@ truthkeep prove-it
 ## MCP Path
 
 ```bash
-aegis-mcp
+truthkeep-mcp
 ```
 
 Or:
@@ -60,3 +60,13 @@ Or:
 ```bash
 truthkeep mcp --json
 ```
+
+Compatibility aliases also remain available:
+
+```bash
+aegis-check
+aegis-setup
+aegis-mcp
+```
+
+
